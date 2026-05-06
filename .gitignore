@@ -4,3 +4,4 @@ build/
 *.iml
 ios/
 android/
+lib/config/supabase_config.dart

@@ -11,7 +11,6 @@ import '../widgets/skwilti_nav.dart';
 import 'create_classroom_screen.dart';
 import 'create_room_screen.dart';
 import 'upload_screen.dart';
-import 'lesson_upload_screen_simple.dart';
 import 'profile_screen.dart';
 
 class TeacherDashboard extends StatefulWidget {
@@ -2072,11 +2071,7 @@ class _LibraryTabState extends State<_LibraryTab> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => LessonUploadScreen(
-                    filiere: _filieres[_selectedFiliere],
-                    subject: _subjects[_selectedSubject]['label'] as String,
-                    semester: 'Semestre 1',
-                  ),
+                  builder: (_) => UploadScreen(),
                 ),
               );
             },
@@ -2091,11 +2086,7 @@ class _LibraryTabState extends State<_LibraryTab> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => LessonUploadScreen(
-          filiere: _filieres[_selectedFiliere],
-          subject: _subjects[_selectedSubject]['label'] as String,
-          semester: semesterTitle,
-        ),
+        builder: (_) => UploadScreen(),
       ),
     );
   }
