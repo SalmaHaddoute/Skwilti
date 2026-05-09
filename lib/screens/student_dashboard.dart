@@ -76,13 +76,37 @@ class _StudentDashboardState extends State<StudentDashboard> {
 }
 
 // ── Home Tab ─────────────────────────────────────────────────
-class _HomeTab extends StatelessWidget {
+class _HomeTab extends StatefulWidget {
   final User? user;
   const _HomeTab({this.user});
+  @override
+  State<_HomeTab> createState() => _HomeTabState();
+}
+
+class _HomeTabState extends State<_HomeTab> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<AppState>().loadStudentSessions();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final sessions = state.recentSessions;
+    final loaded  = state.sessionsLoaded;
+    final stats   = state.userStats;
+
+    // Calcul des stats depuis les sessions réelles
+    final scores = sessions
+        .where((s) => s['score'] != null && s['total_questions'] != null && (s['total_questions'] as int) > 0)
+        .map<int>((s) => ((s['score'] as int) * 100 ~/ (s['total_questions'] as int)))
+        .toList();
+    final bestScore  = scores.isNotEmpty ? scores.reduce((a, b) => a > b ? a : b) : 0;
+    final avgScore   = scores.isNotEmpty ? (scores.reduce((a, b) => a + b) / scores.length).round() : 0;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16).copyWith(bottom: 32),
       child: Column(
@@ -105,32 +129,29 @@ class _HomeTab extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Bonjour ${user?.firstName ?? ''} ',
+                      Text('Bonjour ${widget.user?.firstName ?? ''} ',
                           style: GoogleFonts.nunito(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
                       const SizedBox(height: 4),
                       Text('Prêt à apprendre aujourd\'hui ?',
                           style: GoogleFonts.nunito(fontSize: 13, color: Colors.white.withOpacity(0.85))),
                       const SizedBox(height: 16),
-                      _StudentLevelChip(user: user),
+                      _StudentLevelChip(user: widget.user),
                     ],
                   ),
                 ),
                 Container(
                   width: 80, height: 80,
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15), 
+                    color: Colors.white.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(16),
                     child: Image.asset(
                       'assets/images/student-illustration.webp',
-                      width: 80,
-                      height: 80,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return const Icon(LucideIcons.graduationCap, color: Colors.white, size: 40);
-                      },
+                      width: 80, height: 80, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          const Icon(LucideIcons.graduationCap, color: Colors.white, size: 40),
                     ),
                   ),
                 ),
@@ -138,102 +159,113 @@ class _HomeTab extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-          
-                    
-          // Progress Curves Section
+
+          // Performance Curve
           _SectionHeader('Progression'),
           const SizedBox(height: 12),
-          
-          // Performance Curve
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: AppColors.border, width: 0.5),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(
-                        LucideIcons.trendingUp,
-                        size: 20,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      'Performance cette semaine',
-                      style: GoogleFonts.inter(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.text,
-                      ),
-                    ),
-                  ],
-                ),
+                Row(children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+                    child: const Icon(LucideIcons.trendingUp, size: 20, color: AppColors.primary),
+                  ),
+                  const SizedBox(width: 12),
+                  Text('Performance cette semaine',
+                      style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text)),
+                ]),
                 const SizedBox(height: 16),
-                SizedBox(
-                  height: 120,
-                  child: _PerformanceCurve(),
-                ),
-                ],
+                SizedBox(height: 120, child: _PerformanceCurve(weeklyScores: state.weeklyScores)),
+              ],
             ),
           ),
           const SizedBox(height: 20),
-          
-          // Stats Summary Row
+
+          // Stats row (données réelles)
           Row(
             children: [
-              Expanded(child: _SimpleStatCard(label: 'Meilleur score', value: '92%', icon: LucideIcons.trophy, color: AppColors.success)),
+              Expanded(child: _SimpleStatCard(
+                label: 'Meilleur score',
+                value: scores.isNotEmpty ? '$bestScore%' : '--',
+                icon: LucideIcons.trophy,
+                color: AppColors.success,
+              )),
               const SizedBox(width: 10),
-              Expanded(child: _SimpleStatCard(label: 'Moyenne', value: '78%', icon: LucideIcons.barChart2, color: AppColors.primary)),
+              Expanded(child: _SimpleStatCard(
+                label: 'Moyenne',
+                value: scores.isNotEmpty ? '$avgScore%' : '--',
+                icon: LucideIcons.barChart2,
+                color: AppColors.primary,
+              )),
               const SizedBox(width: 10),
-              Expanded(child: _SimpleStatCard(label: 'Amélioration', value: '+12%', icon: LucideIcons.trendingUp, color: AppColors.info)),
+              Expanded(child: _SimpleStatCard(
+                label: 'QSM complétés',
+                value: '${stats?.totalQsmCompleted ?? sessions.length}',
+                icon: LucideIcons.checkCircle,
+                color: AppColors.info,
+              )),
             ],
           ),
           const SizedBox(height: 20),
-          
-          // QSM récents
+
+          // QSM récents (données réelles)
           _SectionHeader('QSM récents'),
           const SizedBox(height: 10),
-          // Créer un QSM statique pour démonstration
-          _RecentQsmCard(
-            title: 'Test de Mathématiques',
-            score: 85,
-            date: DateTime.now().subtract(const Duration(hours: 2)),
-            onTap: () => _createStaticQsm(context),
-          ),
-          _RecentQsmCard(
-            title: 'Physique - Mécanique',
-            score: 78,
-            date: DateTime.now().subtract(const Duration(days: 1)),
-            onTap: () => _createStaticQsm(context),
-          ),
-          _RecentQsmCard(
-            title: 'Français - Grammaire',
-            score: 92,
-            date: DateTime.now().subtract(const Duration(days: 2)),
-            onTap: () => _createStaticQsm(context),
-          ),
-          
+          if (!loaded)
+            const Center(child: Padding(
+              padding: EdgeInsets.all(24),
+              child: CircularProgressIndicator(),
+            ))
+          else if (sessions.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border, width: 0.5),
+              ),
+              child: Column(
+                children: [
+                  Icon(LucideIcons.fileText, size: 40, color: AppColors.textSub),
+                  const SizedBox(height: 12),
+                  Text('Aucun QSM complété pour l\'instant',
+                      style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSub)),
+                  const SizedBox(height: 4),
+                  Text('Rejoignez une classe ou un room pour commencer !',
+                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSub),
+                      textAlign: TextAlign.center),
+                ],
+              ),
+            )
+          else
+            ...sessions.take(5).map((s) {
+              final total    = (s['total_questions'] as int? ?? 0);
+              final score    = (s['score'] as int? ?? 0);
+              final pct      = total > 0 ? (score * 100 ~/ total) : 0;
+              final title    = (s['courses'] as Map?)?['title'] as String? ?? 'QSM sans titre';
+              final completedAt = s['completed_at'] != null
+                  ? DateTime.tryParse(s['completed_at']) ?? DateTime.now()
+                  : DateTime.now();
+              return _RecentQsmCard(
+                title: title,
+                score: pct,
+                date: completedAt,
+                onTap: () {},
+              );
+            }),
+
           const SizedBox(height: 20),
-          
+
           // Actions rapides
           _SectionHeader('Actions rapides'),
           const SizedBox(height: 10),
@@ -534,18 +566,33 @@ class _DetailedStatCard extends StatelessWidget {
 
 // ── Performance Curve ─────────────────────────────────
 class _PerformanceCurve extends StatelessWidget {
+  final List<Map<String, dynamic>> weeklyScores;
+  const _PerformanceCurve({this.weeklyScores = const []});
+
   @override
   Widget build(BuildContext context) {
-    // Données de performance pour la courbe
-    final data = [
-      {'day': 'Lun', 'score': 65},
-      {'day': 'Mar', 'score': 72},
-      {'day': 'Mer', 'score': 78},
-      {'day': 'Jeu', 'score': 85},
-      {'day': 'Ven', 'score': 82},
-      {'day': 'Sam', 'score': 90},
-      {'day': 'Dim', 'score': 88},
-    ];
+    // Construire les données des 7 derniers jours
+    final dayLabels = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+    final Map<int, List<int>> byDayIndex = {}; // 0=il y a 6j .. 6=aujourd'hui
+    for (final s in weeklyScores) {
+      if (s['completed_at'] != null && s['total_questions'] != null && (s['total_questions'] as int) > 0) {
+        final date = DateTime.tryParse(s['completed_at']);
+        if (date != null) {
+          final diff = DateTime.now().difference(date).inDays;
+          if (diff >= 0 && diff < 7) {
+            final idx = 6 - diff;
+            final pct = ((s['score'] as int? ?? 0) * 100 ~/ (s['total_questions'] as int));
+            byDayIndex[idx] = [...(byDayIndex[idx] ?? []), pct];
+          }
+        }
+      }
+    }
+    final data = List.generate(7, (i) {
+      final scores = byDayIndex[i] ?? [];
+      final avg = scores.isNotEmpty ? scores.reduce((a, b) => a + b) ~/ scores.length : 0;
+      final date = DateTime.now().subtract(Duration(days: 6 - i));
+      return {'day': dayLabels[date.weekday - 1], 'score': avg};
+    });
 
     return CustomPaint(
       painter: _CurvePainter(data),
@@ -1111,29 +1158,23 @@ class _QuickStatCard extends StatelessWidget {
 class _RecentActivityCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final activities = [
-      {
-        'title': 'QSM Mathématiques',
-        'score': '85%',
-        'time': 'Il y a 2h',
-        'icon': LucideIcons.calculator,
-        'color': AppColors.primary,
-      },
-      {
-        'title': 'QSM Physique',
-        'score': '92%',
-        'time': 'Il y a 5h',
-        'icon': LucideIcons.atom,
-        'color': AppColors.info,
-      },
-      {
-        'title': 'QSM Chimie',
-        'score': '78%',
-        'time': 'Hier',
-        'icon': LucideIcons.beaker,
-        'color': AppColors.success,
-      },
-    ];
+    final sessions = context.watch<AppState>().recentSessions;
+    final activities = sessions.take(3).map((s) {
+      final total = (s['total_questions'] as int? ?? 0);
+      final score = (s['score'] as int? ?? 0);
+      final pct   = total > 0 ? (score * 100 ~/ total) : 0;
+      final title = (s['courses'] as Map?)?['title'] as String? ?? 'QSM';
+      final completedAt = s['completed_at'] != null ? DateTime.tryParse(s['completed_at']) : null;
+      final diff = completedAt != null ? DateTime.now().difference(completedAt) : null;
+      String timeStr = 'Récemment';
+      if (diff != null) {
+        if (diff.inDays > 0) timeStr = 'Il y a ${diff.inDays}j';
+        else if (diff.inHours > 0) timeStr = 'Il y a ${diff.inHours}h';
+        else timeStr = 'Il y a ${diff.inMinutes}min';
+      }
+      return {'title': title, 'score': '$pct%', 'time': timeStr,
+              'icon': LucideIcons.fileText, 'color': pct >= 80 ? AppColors.success : pct >= 60 ? AppColors.primary : AppColors.error};
+    }).toList();
 
     return Container(
       decoration: BoxDecoration(
@@ -1289,34 +1330,31 @@ class _ClassesTab extends StatelessWidget {
         children: [
           _SectionHeader('Mes classes'),
           const SizedBox(height: 10),
-          // Classes par défaut si aucune classe n'est disponible
-          if (classrooms.isEmpty) ...[
-            _ClassCard(
-              name: 'Mathématiques 1AC',
-              description: 'Prof: M. Dupont · 28 élèves',
-              progress: 0.85,
-              onTap: () {
-                // Navigation vers la classe de mathématiques
-              },
-            ),
-            _ClassCard(
-              name: 'Physique-Chimie 2AC',
-              description: 'Prof: Mme. Martin · 32 élèves',
-              progress: 0.72,
-              onTap: () {
-                // Navigation vers la classe de physique-chimie
-              },
-            ),
-          ],
-          // Classes de l'utilisateur
-          ...classrooms.map((classroom) => _ClassCard(
-            name: classroom.name,
-            description: '${classroom.name} · ${classroom.id} élèves',
-            progress: 0.75,
-            onTap: () {
-              // Navigation vers la classe
-            },
-          )),
+          if (classrooms.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border, width: 0.5),
+              ),
+              child: Column(
+                children: [
+                  Icon(LucideIcons.users, size: 40, color: AppColors.textSub),
+                  const SizedBox(height: 12),
+                  Text('Vous n\'êtes dans aucune classe', style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSub)),
+                  const SizedBox(height: 4),
+                  Text('Rejoignez une classe avec un code d\'invitation.', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSub), textAlign: TextAlign.center),
+                ],
+              ),
+            )
+          else
+            ...classrooms.map((classroom) => _ClassCard(
+              name: classroom.name,
+              description: '${classroom.teacherName} · ${classroom.totalStudents} élèves',
+              progress: 0.0,
+              onTap: () {},
+            )),
           const SizedBox(height: 20),
           ElevatedButton.icon(
             onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const JoinClassScreen())),
@@ -1441,38 +1479,8 @@ class _ClassCard extends StatelessWidget {
 class _RoomsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final rooms = [
-      {
-        'code': 'SKW-4821',
-        'title': 'QSM Mathématiques',
-        'subject': 'Mathématiques',
-        'teacher': 'M. Dupont',
-        'time': '15 min',
-        'status': 'active',
-        'progress': 0.6,
-        'color': AppColors.primary,
-      },
-      {
-        'code': 'SKW-3742',
-        'title': 'QSM Physique',
-        'subject': 'Physique',
-        'teacher': 'Mme. Martin',
-        'time': '20 min',
-        'status': 'completed',
-        'progress': 1.0,
-        'color': AppColors.success,
-      },
-      {
-        'code': 'SKW-9284',
-        'title': 'QSM Chimie',
-        'subject': 'Chimie',
-        'teacher': 'M. Bernard',
-        'time': '25 min',
-        'status': 'waiting',
-        'progress': 0.0,
-        'color': AppColors.warning,
-      },
-    ];
+    // Rooms : pas de table rooms côté étudiant pour l'instant → on garde la section "rejoindre"
+    final List<Map<String, dynamic>> rooms = [];
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16).copyWith(bottom: 32),

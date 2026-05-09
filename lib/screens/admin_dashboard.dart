@@ -6,6 +6,7 @@ import '../theme/app_theme.dart';
 import '../models/user.dart';
 import '../services/app_state.dart';
 import 'admin_course_management.dart';
+import 'lesson_upload_screen.dart';
 import '../widgets/admin_users_table.dart';
 import '../widgets/admin_subscription_chart.dart';
 import '../widgets/skwilti_nav.dart';
@@ -46,178 +47,162 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 }
 
-class _StatsTab extends StatelessWidget {
-  static const _stats = [
-    (LucideIcons.users, '1,284', 'Étudiants', AppColors.green, 0.72),
-    (LucideIcons.graduationCap, '87', 'Enseignants', AppColors.primary, 0.58),
-    (LucideIcons.heart, '234', 'Parents', Color(0xFF9B59B6), 0.35),
-    (LucideIcons.fileText, '2,891', 'QSM créés', AppColors.info, 0.88),
-  ];
-  static const _week = [420, 380, 510, 490, 620, 280, 190];
-  static const _days = ['Lu', 'Ma', 'Me', 'Je', 'Ve', 'Sa', 'Di'];
+class _StatsTab extends StatefulWidget {
+  @override
+  State<_StatsTab> createState() => _StatsTabState();
+}
+
+class _StatsTabState extends State<_StatsTab> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final s = context.read<AppState>();
+      s.loadGlobalStats();
+      s.loadAdminUsers();
+      s.loadAdminCourses();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    final globalStats = context.watch<AppState>().globalStats;
+    final loaded      = context.watch<AppState>().globalStatsLoaded;
+    final activity    = context.watch<AppState>().weeklyActivity;
+
+    final stats = [
+      (LucideIcons.users, '${globalStats?.totalStudents ?? '--'}', 'Étudiants', AppColors.green, globalStats != null && globalStats.totalUsers > 0 ? globalStats.totalStudents / globalStats.totalUsers : 0.0),
+      (LucideIcons.graduationCap, '${globalStats?.totalTeachers ?? '--'}', 'Enseignants', AppColors.primary, globalStats != null && globalStats.totalUsers > 0 ? globalStats.totalTeachers / globalStats.totalUsers : 0.0),
+      (LucideIcons.heart, '${globalStats?.totalParents ?? '--'}', 'Parents', const Color(0xFF9B59B6), globalStats != null && globalStats.totalUsers > 0 ? globalStats.totalParents / globalStats.totalUsers : 0.0),
+      (LucideIcons.fileText, '${globalStats?.totalQsmCreated ?? '--'}', 'QSM créés', AppColors.info, 0.88),
+    ];
+
+    final maxActivity = activity.values.fold(1, (a, b) => a > b ? a : b);
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // Welcome card comme les autres
-          Container(
-            padding: const EdgeInsets.all(28),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [AppColors.primary, Color(0xFFBF4E07)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Bonjour Administrateur',
-                          style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
-                      const SizedBox(height: 4),
-                      Text('Gestion complète de la plateforme Skwilti',
-                          style: GoogleFonts.inter(fontSize: 13, color: Colors.white.withOpacity(0.85))),
-                      const SizedBox(height: 16),
-                      _AdminRoleChip(),
-                    ],
-                  ),
-                ),
-                Container(
-                  width: 80, height: 80,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15), 
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: const Icon(
-                      LucideIcons.shield,
-                      color: Colors.white,
-                      size: 40,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        const SizedBox(height: 20),
-        // Diagramme d'activité au début
         Container(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(28),
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.border, width: 0.5),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.04),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
+            gradient: const LinearGradient(
+              colors: [AppColors.primary, Color(0xFFBF4E07)],
+              begin: Alignment.topLeft, end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            children: [
+              Expanded(child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Bonjour Administrateur',
+                      style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
+                  const SizedBox(height: 4),
+                  Text('Gestion complète de la plateforme Skwilti',
+                      style: GoogleFonts.inter(fontSize: 13, color: Colors.white.withOpacity(0.85))),
+                  const SizedBox(height: 16),
+                  _AdminRoleChip(),
+                ],
+              )),
+              Container(
+                width: 80, height: 80,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(16),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: const Icon(LucideIcons.shield, color: Colors.white, size: 40),
+                ),
               ),
             ],
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Activité de la semaine',
-                style: GoogleFonts.nunito(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.text,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Container(
+        ),
+        const SizedBox(height: 20),
+        // Graphe activité réelle
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white, borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.border, width: 0.5),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Activité de la semaine',
+                style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text)),
+            const SizedBox(height: 16),
+            if (!loaded)
+              const Center(child: CircularProgressIndicator())
+            else
+              SizedBox(
                 height: 150,
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    for (int i = 0; i < _week.length; i++) ...[
+                    for (int i = 0; i < 7; i++) ...[
                       if (i > 0) const SizedBox(width: 8),
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            Text(
-                              '${_week[i]}',
-                              style: GoogleFonts.nunito(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.primary,
+                      Expanded(child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Text('${activity[i] ?? 0}', style: GoogleFonts.nunito(fontSize: 10, fontWeight: FontWeight.w800, color: AppColors.primary)),
+                          const SizedBox(height: 4),
+                          Container(
+                            height: maxActivity > 0 ? 80 * ((activity[i] ?? 0) / maxActivity) : 4,
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [AppColors.primary, AppColors.primary2],
+                                begin: Alignment.bottomCenter, end: Alignment.topCenter,
                               ),
+                              borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
                             ),
-                            const SizedBox(height: 4),
-                            Container(
-                              height: 80 * (_week[i] / 700),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [AppColors.primary, AppColors.primary2],
-                                  begin: Alignment.bottomCenter,
-                                  end: Alignment.topCenter,
-                                ),
-                                borderRadius: const BorderRadius.vertical(
-                                  top: Radius.circular(4),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              _days[i],
-                              style: GoogleFonts.nunito(
-                                fontSize: 10,
-                                color: AppColors.textSub,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(['Lu','Ma','Me','Je','Ve','Sa','Di'][i],
+                              style: GoogleFonts.nunito(fontSize: 10, color: AppColors.textSub)),
+                        ],
+                      )),
                     ],
                   ],
                 ),
               ),
-            ],
-          ),
+          ]),
         ),
         const SizedBox(height: 20),
-        GridView.count(crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
-          crossAxisSpacing: 10, mainAxisSpacing: 10, childAspectRatio: 1.6,
-          children: _stats.map((s) => Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border, width: 0.5)),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                Container(width: 30, height: 30, decoration: BoxDecoration(color: s.$4.withOpacity(0.12), borderRadius: BorderRadius.circular(8)),
-                  child: Icon(s.$1, size: 15, color: s.$4)),
+        // Grid des stats réelles
+        if (loaded)
+          GridView.count(
+            crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+            crossAxisSpacing: 10, mainAxisSpacing: 10, childAspectRatio: 1.6,
+            children: stats.map((s) => Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border, width: 0.5)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Container(width: 30, height: 30, decoration: BoxDecoration(color: s.$4.withOpacity(0.12), borderRadius: BorderRadius.circular(8)),
+                    child: Icon(s.$1, size: 15, color: s.$4)),
+                  const Spacer(),
+                  Text('', style: GoogleFonts.nunito(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.success)),
+                ]),
                 const Spacer(),
-                Text('+12%', style: GoogleFonts.nunito(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.success)),
+                Text(s.$2, style: GoogleFonts.nunito(fontSize: 22, fontWeight: FontWeight.w900, color: s.$4)),
+                Text(s.$3, style: GoogleFonts.nunito(fontSize: 11, color: AppColors.textSub)),
+                const SizedBox(height: 6),
+                ClipRRect(borderRadius: BorderRadius.circular(3),
+                  child: LinearProgressIndicator(value: s.$5.clamp(0.0, 1.0), minHeight: 4, backgroundColor: AppColors.border, valueColor: AlwaysStoppedAnimation(s.$4))),
               ]),
-              const Spacer(),
-              Text(s.$2, style: GoogleFonts.nunito(fontSize: 22, fontWeight: FontWeight.w900, color: s.$4)),
-              Text(s.$3, style: GoogleFonts.nunito(fontSize: 11, color: AppColors.textSub)),
-              const SizedBox(height: 6),
-              ClipRRect(borderRadius: BorderRadius.circular(3),
-                child: LinearProgressIndicator(value: s.$5, minHeight: 4, backgroundColor: AppColors.border, valueColor: AlwaysStoppedAnimation(s.$4))),
-            ]),
-          )).toList(),
-        ),
+            )).toList(),
+          )
+        else
+          const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
         const SizedBox(height: 20),
-        // Diagramme circulaire des abonnements
-        Center(
-          child: AdminSubscriptionChart(
-            freeUsers: 856,
-            premiumUsers: 428,
-          ),
-        ),
+        // Diagramme abonnements réel
+        if (globalStats != null)
+          Center(child: AdminSubscriptionChart(
+            freeUsers: globalStats.subscriptionCounts['free'] ?? 0,
+            premiumUsers: (globalStats.subscriptionCounts['premium'] ?? 0) + (globalStats.subscriptionCounts['basic'] ?? 0),
+          )),
         const SizedBox(height: 20),
-        // Tableau des utilisateurs
-        AdminUsersTable(),
+        AdminUsersTable(users: context.watch<AppState>().adminUsers),
       ]),
     );
   }
@@ -244,28 +229,15 @@ class _UsersTab extends StatefulWidget {
 }
 
 class _UsersTabState extends State<_UsersTab> {
-  static const _allUsers = [
-    {'name': 'Amira B.', 'initials': 'AB', 'role': 'Étudiant', 'color': AppColors.green, 'email': 'amira.b@skwilti.edu', 'status': 'Actif', 'qsmCount': '15 QSM', 'score': '85%', 'subscription': 'Premium'},
-    {'name': 'Youssef M.', 'initials': 'YM', 'role': 'Étudiant', 'color': AppColors.green, 'email': 'youssef.m@skwilti.edu', 'status': 'Actif', 'qsmCount': '23 QSM', 'score': '92%', 'subscription': 'Freemium'},
-    {'name': 'Prof. Fatima Z.', 'initials': 'FZ', 'role': 'Enseignant', 'color': AppColors.primary, 'email': 'fatima.z@skwilti.edu', 'status': 'Actif', 'qsmCount': '45 QSM', 'score': 'N/A', 'subscription': 'Premium'},
-    {'name': 'Prof. Hassan M.', 'initials': 'HM', 'role': 'Enseignant', 'color': AppColors.primary, 'email': 'hassan.m@skwilti.edu', 'status': 'Inactif', 'qsmCount': '12 QSM', 'score': 'N/A', 'subscription': 'Freemium'},
-    {'name': 'Sara K.', 'initials': 'SK', 'role': 'Étudiant', 'color': AppColors.green, 'email': 'sara.k@skwilti.edu', 'status': 'Actif', 'qsmCount': '8 QSM', 'score': '78%', 'subscription': 'Freemium'},
-    {'name': 'Leila M.', 'initials': 'LM', 'role': 'Parent', 'color': Color(0xFF9B59B6), 'email': 'leila.m@skwilti.edu', 'status': 'Actif', 'qsmCount': '0 QSM', 'score': 'N/A', 'subscription': 'Premium'},
-    {'name': 'Admin User', 'initials': 'AU', 'role': 'Admin', 'color': AppColors.info, 'email': 'admin@skwilti.edu', 'status': 'Actif', 'qsmCount': 'N/A', 'score': 'N/A', 'subscription': 'Premium'},
-  ];
-
   String _selectedFilter = 'Tous';
 
   List<Map<String, dynamic>> get _filteredUsers {
+    final allUsers = context.read<AppState>().adminUsers;
     switch (_selectedFilter) {
-      case 'Enseignants':
-        return _allUsers.where((u) => u['role'] == 'Enseignant').toList();
-      case 'Étudiants':
-        return _allUsers.where((u) => u['role'] == 'Étudiant').toList();
-      case 'Parents':
-        return _allUsers.where((u) => u['role'] == 'Parent').toList();
-      default:
-        return _allUsers;
+      case 'Enseignants': return allUsers.where((u) => u['role'] == 'teacher').toList();
+      case 'Étudiants':   return allUsers.where((u) => u['role'] == 'student').toList();
+      case 'Parents':     return allUsers.where((u) => u['role'] == 'parent').toList();
+      default:            return allUsers;
     }
   }
 
@@ -278,97 +250,58 @@ class _UsersTabState extends State<_UsersTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const SizedBox(height: 24),
           // Hero Section
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [AppColors.primary, AppColors.primary.withOpacity(0.8)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+                begin: Alignment.topLeft, end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primary.withOpacity(0.2),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
+              boxShadow: [BoxShadow(color: AppColors.primary.withOpacity(0.2), blurRadius: 12, offset: const Offset(0, 4))],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(
-                        LucideIcons.users,
-                        size: 28,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Gestion des utilisateurs',
-                            style: GoogleFonts.inter(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                            ),
-                          ),
-                          Text(
-                            '${filteredUsers.length} utilisateurs affichés sur ${_allUsers.length} au total',
-                            style: GoogleFonts.inter(
-                              fontSize: 14,
-                              color: Colors.white.withOpacity(0.9),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                Row(children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(12)),
+                    child: const Icon(LucideIcons.users, size: 28, color: Colors.white),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Gestion des utilisateurs',
+                          style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
+                      Text('${filteredUsers.length} affichés sur ${context.watch<AppState>().adminUsers.length} au total',
+                          style: GoogleFonts.inter(fontSize: 14, color: Colors.white.withOpacity(0.9))),
+                    ],
+                  )),
+                ]),
                 const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _QuickUserStat(
-                        label: 'Étudiants',
-                        value: '${_allUsers.where((u) => u['role'] == 'Étudiant').length}',
-                        icon: LucideIcons.graduationCap,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _QuickUserStat(
-                        label: 'Enseignants',
-                        value: '${_allUsers.where((u) => u['role'] == 'Enseignant').length}',
-                        icon: LucideIcons.bookOpen,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _QuickUserStat(
-                        label: 'Parents',
-                        value: '${_allUsers.where((u) => u['role'] == 'Parent').length}',
-                        icon: LucideIcons.heart,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
+                Row(children: [
+                  Expanded(child: _QuickUserStat(
+                    label: 'Étudiants',
+                    value: '${context.watch<AppState>().adminUsers.where((u) => u['role'] == 'student').length}',
+                    icon: LucideIcons.graduationCap, color: Colors.white,
+                  )),
+                  const SizedBox(width: 12),
+                  Expanded(child: _QuickUserStat(
+                    label: 'Enseignants',
+                    value: '${context.watch<AppState>().adminUsers.where((u) => u['role'] == 'teacher').length}',
+                    icon: LucideIcons.bookOpen, color: Colors.white,
+                  )),
+                  const SizedBox(width: 12),
+                  Expanded(child: _QuickUserStat(
+                    label: 'Parents',
+                    value: '${context.watch<AppState>().adminUsers.where((u) => u['role'] == 'parent').length}',
+                    icon: LucideIcons.heart, color: Colors.white,
+                  )),
+                ]),
               ],
             ),
           ),
@@ -466,16 +399,37 @@ class _UsersTabState extends State<_UsersTab> {
               itemCount: filteredUsers.length,
               itemBuilder: (_, i) {
                 final u = filteredUsers[i];
+                final roleMap = {
+                  'student': 'Étudiant',
+                  'teacher': 'Enseignant',
+                  'parent': 'Parent',
+                  'admin': 'Admin',
+                };
+                final role = roleMap[u['role']] ?? 'Utilisateur';
+                
+                final firstName = u['first_name'] as String? ?? '';
+                final lastName = u['last_name'] as String? ?? '';
+                final fullName = ('$firstName $lastName').trim();
+                final displayName = fullName.isNotEmpty ? fullName : (u['email'] as String? ?? 'Inconnu');
+                final names = displayName.split(' ');
+                final initials = names.length > 1 
+                    ? '${names[0][0]}${names[1][0]}'.toUpperCase()
+                    : displayName.isNotEmpty ? displayName.substring(0, 1).toUpperCase() : 'U';
+
+                Color userColor = AppColors.primary;
+                if (u['role'] == 'student') userColor = AppColors.success;
+                if (u['role'] == 'parent') userColor = AppColors.warning;
+
                 return _UserCard(
-                  name: u['name'] as String,
-                  initials: u['initials'] as String,
-                  role: u['role'] as String,
-                  color: u['color'] as Color,
-                  email: u['email'] as String,
-                  status: u['status'] as String,
-                  qsmCount: u['qsmCount'] as String,
-                  score: u['score'] as String,
-                  subscription: u['subscription'] as String,
+                  name: displayName,
+                  initials: initials,
+                  role: role,
+                  color: userColor,
+                  email: u['email'] as String? ?? 'N/A',
+                  status: 'Actif', // Todo: add status to db if needed
+                  qsmCount: 'N/A', // Not supported directly in profiles
+                  score: 'N/A',    // Not supported directly in profiles
+                  subscription: u['subscription'] == 'premium' ? 'Premium' : 'Gratuit',
                 );
               },
             ),
@@ -693,46 +647,79 @@ class _CoursesTabState extends State<_CoursesTab> {
   static const _subjects = [
     (icon: LucideIcons.calculator, label: 'Maths'),
     (icon: LucideIcons.atom, label: 'Physique-Chimie'),
-    (icon: LucideIcons.microscope, label: 'SVT'),
+    (icon: LucideIcons.microscope, label: 'Sciences Vie'),
     (icon: LucideIcons.bookOpen, label: 'Français'),
     (icon: LucideIcons.globe, label: 'Anglais'),
     (icon: LucideIcons.history, label: 'Histoire-Géo'),
   ];
 
-  // Cours par filière → matière → semestre
-  static const _curriculum = <String, Map<String, List<Map<String, dynamic>>>>{
-    'Tronc Commun': {
-      'Maths': [
-        {'title': 'Semestre 1', 'count': 12, 'lessons': ['Algèbre', 'Géométrie', 'Fonctions', 'Statistiques']},
-        {'title': 'Semestre 2', 'count': 14, 'lessons': ['Nombres complexes', 'Suites', 'Intégrales', 'Probabilités']},
-      ],
-      'Physique-Chimie': [
-        {'title': 'Semestre 1', 'count': 10, 'lessons': ['Mécanique', 'Thermodynamique', 'Optique']},
-        {'title': 'Semestre 2', 'count': 11, 'lessons': ['Électricité', 'Chimie organique', 'Réactions chimiques']},
-      ],
-    },
-    '1ère Année Baccalauréat': {
-      'Maths': [
-        {'title': 'Semestre 1', 'count': 15, 'lessons': ['Limites', 'Dérivées', 'Fonctions exponentielles']},
-        {'title': 'Semestre 2', 'count': 16, 'lessons': ['Logarithmes', 'Trigonométrie', 'Géométrie analytique']},
-      ],
-    },
+  // Aliases: what teachers might store vs what the tab label says
+  static const _subjectAliases = <String, List<String>>{
+    'Sciences Vie': ['Sciences Vie', 'SVT', 'Biologie', 'sciences vie', 'svt'],
+    'Physique-Chimie': ['Physique-Chimie', 'Physique', 'Chimie', 'physique-chimie', 'physique chimie'],
+    'Maths': ['Maths', 'Mathématiques', 'maths', 'mathématiques'],
+    'Français': ['Français', 'Francais', 'français', 'francais'],
+    'Anglais': ['Anglais', 'anglais'],
+    'Histoire-Géo': ['Histoire-Géo', 'Histoire', 'Géographie', 'histoire-géo'],
   };
 
+  /// Builds semesters dynamically from real Supabase courses
   List<Map<String, dynamic>> get _currentSemesters {
     final filiere = _filieres[_selectedFiliere];
     final subject = _subjects[_selectedSubject].label;
-    final curriculum = _curriculum[filiere]?[subject] ?? [
-      {'title': 'Semestre 1', 'count': 10, 'lessons': <String>[]},
-      {'title': 'Semestre 2', 'count': 12, 'lessons': <String>[]},
-    ];
-    return curriculum.map((s) => {
-      'title': s['title'] as String,
-      'count': s['count'] as int,
-      'lessons': (s['lessons'] as List<String>).isEmpty 
-          ? ['Leçon 1', 'Leçon 2', 'Leçon 3', 'Leçon 4']
-          : s['lessons'] as List<String>,
+    final aliases = _subjectAliases[subject] ?? [subject];
+
+    final allCourses = context.read<AppState>().adminCourses;
+
+    // Filter by selected filiere (flexible: null/empty = show in all) and subject (with aliases)
+    final filtered = allCourses.where((c) {
+      final courseFiliere = (c['filiere'] as String? ?? '').trim();
+      final courseSubject = (c['subject'] as String? ?? '').trim();
+      // Filiere: match or ignore if empty
+      final filiereMatch = courseFiliere.isEmpty || courseFiliere == filiere;
+      // Subject: match with aliases (case-insensitive)
+      final subjectMatch = aliases.any((alias) =>
+          courseSubject.toLowerCase() == alias.toLowerCase());
+      return filiereMatch && subjectMatch;
     }).toList();
+
+    // Group into Semestre 1 and Semestre 2
+    final sem1Courses = filtered.where((c) {
+      final desc = (c['description'] as String? ?? '').toLowerCase();
+      final sem = (c['semester'] as String? ?? '').toLowerCase();
+      return sem.contains('semestre 1') || sem.contains('semester 1') || desc.contains('semestre 1');
+    }).toList();
+
+    final sem2Courses = filtered.where((c) {
+      final desc = (c['description'] as String? ?? '').toLowerCase();
+      final sem = (c['semester'] as String? ?? '').toLowerCase();
+      return sem.contains('semestre 2') || sem.contains('semester 2') || desc.contains('semestre 2');
+    }).toList();
+
+    // Default: if no semester tag found, put in semestre 1
+    final untagged = filtered.where((c) {
+      final desc = (c['description'] as String? ?? '').toLowerCase();
+      final sem = (c['semester'] as String? ?? '').toLowerCase();
+      return !sem.contains('semestre') && !sem.contains('semester') &&
+             !desc.contains('semestre 1') && !desc.contains('semestre 2');
+    }).toList();
+
+    final allSem1 = [...sem1Courses, ...untagged];
+
+    return [
+      {
+        'title': 'Semestre 1',
+        'count': allSem1.length,
+        'courses': allSem1,
+        'lessons': allSem1.map((c) => c['title'] as String? ?? 'Sans titre').toList(),
+      },
+      {
+        'title': 'Semestre 2',
+        'count': sem2Courses.length,
+        'courses': sem2Courses,
+        'lessons': sem2Courses.map((c) => c['title'] as String? ?? 'Sans titre').toList(),
+      },
+    ];
   }
 
   @override
@@ -811,16 +798,15 @@ class _CoursesTabState extends State<_CoursesTab> {
             itemBuilder: (context, i) {
               final sem = _currentSemesters[i];
               final expanded = _expandedSemesters.contains(i);
+              final lessons = (sem['lessons'] as List).cast<String>();
               return _AdminSemesterSection(
                 title: sem['title'] as String,
                 lessonCount: sem['count'] as int,
-                lessons: (sem['lessons'] as List<String>),
+                lessons: lessons,
                 isExpanded: expanded,
                 onToggle: () => setState(() {
                   expanded ? _expandedSemesters.remove(i) : _expandedSemesters.add(i);
                 }),
-                onEdit: () => _showEditDialog(sem['title'] as String),
-                onDelete: () => _showDeleteDialog(sem['title'] as String),
               );
             },
           ),
@@ -910,24 +896,14 @@ class _CoursesTabState extends State<_CoursesTab> {
   }
 
   void _showAddCourseDialog() {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text('Ajouter un cours', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
-        content: Text('Ajouter un nouveau cours à ${_filieres[_selectedFiliere]} - ${_subjects[_selectedSubject].label}', style: GoogleFonts.inter()),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Annuler', style: GoogleFonts.inter()),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              // Add course logic
-            },
-            child: Text('Ajouter', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
-          ),
-        ],
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LessonUploadScreen(
+          filiere: _filieres[_selectedFiliere],
+          subject: _subjects[_selectedSubject].label,
+          semester: 'Semestre 1',
+        ),
       ),
     );
   }
@@ -998,8 +974,6 @@ class _AdminSemesterSection extends StatelessWidget {
   final List<String> lessons;
   final bool isExpanded;
   final VoidCallback onToggle;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
 
   const _AdminSemesterSection({
     required this.title,
@@ -1007,8 +981,6 @@ class _AdminSemesterSection extends StatelessWidget {
     required this.lessons,
     required this.isExpanded,
     required this.onToggle,
-    required this.onEdit,
-    required this.onDelete,
   });
 
   @override
@@ -1059,38 +1031,7 @@ class _AdminSemesterSection extends StatelessWidget {
             ),
           ),
 
-          // ─── Admin actions buttons ──────────────────────────────────
-          if (isExpanded)
-            Container(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: onEdit,
-                      icon: const Icon(LucideIcons.pencil, size: 16),
-                      label: Text('Modifier', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700)),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: onDelete,
-                      icon: const Icon(LucideIcons.trash2, size: 16),
-                      label: Text('Supprimer', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700)),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          // Buttons removed
 
           // ─── Leçons list ─────────────────────────────────────
           AnimatedSize(

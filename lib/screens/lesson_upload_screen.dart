@@ -32,6 +32,17 @@ class _LessonUploadScreenState extends State<LessonUploadScreen> {
   bool _isUploading = false;
   double _progress = 0.0;
   String _progressStep = '';
+  late String _selectedSemester;
+
+  @override
+  void initState() {
+    super.initState();
+    if (['Semestre 1', 'Semestre 2'].contains(widget.semester)) {
+      _selectedSemester = widget.semester;
+    } else {
+      _selectedSemester = 'Semestre 1';
+    }
+  }
 
   final List<String> _supportedFormats = [
     'PDF', 'DOC', 'DOCX', 'PPT', 'PPTX', 'TXT', 'JPG', 'JPEG', 'PNG'
@@ -91,17 +102,12 @@ class _LessonUploadScreenState extends State<LessonUploadScreen> {
       await Future.delayed(const Duration(seconds: 1));
       
       if (mounted) {
-        // Add lesson to AppState
-        context.read<AppState>().addLesson({
-          'id': DateTime.now().millisecondsSinceEpoch.toString(),
+        // Add lesson to AppState / Supabase
+        await context.read<AppState>().uploadCourse({
           'title': _lessonTitle,
-          'description': _lessonDescription,
-          'fileName': _fileName,
-          'filiere': widget.filiere,
+          'description': 'Semestre: $_selectedSemester${_lessonDescription.isNotEmpty ? '\n$_lessonDescription' : ''}',
           'subject': widget.subject,
-          'semester': widget.semester,
-          'uploadedAt': DateTime.now().toIso8601String(),
-          'fileSize': _selectedFile!.lengthSync(),
+          'file_name': _fileName,
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -409,6 +415,40 @@ class _LessonUploadScreenState extends State<LessonUploadScreen> {
                     color: AppColors.textSub,
                   ),
                   hintStyle: GoogleFonts.inter(
+                    fontSize: 14,
+                    color: AppColors.textSub,
+                  ),
+                ),
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  color: AppColors.text,
+                ),
+              ),
+              const SizedBox(height: 16),
+              
+              // Semester field
+              DropdownButtonFormField<String>(
+                value: _selectedSemester,
+                items: ['Semestre 1', 'Semestre 2'].map((s) => DropdownMenuItem(
+                  value: s,
+                  child: Text(s),
+                )).toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() => _selectedSemester = value);
+                  }
+                },
+                decoration: InputDecoration(
+                  labelText: 'Semestre',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: AppColors.primary),
+                  ),
+                  labelStyle: GoogleFonts.inter(
                     fontSize: 14,
                     color: AppColors.textSub,
                   ),

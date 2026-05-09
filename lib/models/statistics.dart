@@ -123,6 +123,7 @@ class GlobalStatistics {
   final Map<String, int> usersByRole;
   final Map<String, int> qsmByCategory;
   final Map<String, double> averageScoresByLevel;
+  final Map<String, int> subscriptionCounts; // free / basic / premium
   final DateTime lastUpdated;
 
   const GlobalStatistics({
@@ -137,6 +138,7 @@ class GlobalStatistics {
     this.usersByRole = const {},
     this.qsmByCategory = const {},
     this.averageScoresByLevel = const {},
+    this.subscriptionCounts = const {},
     required this.lastUpdated,
   });
 

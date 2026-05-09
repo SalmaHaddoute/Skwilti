@@ -48,269 +48,188 @@ class _ParentDashboardState extends State<ParentDashboard> {
   }
 }
 
-class _HomeTab extends StatelessWidget {
+class _HomeTab extends StatefulWidget {
   final User? user;
   const _HomeTab({this.user});
-  static const _child = ('Amira B.', 'AB', 87, 12, AppColors.green);
+  @override
+  State<_HomeTab> createState() => _HomeTabState();
+}
+
+class _HomeTabState extends State<_HomeTab> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<AppState>().loadChildData();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    final state   = context.watch<AppState>();
+    final child   = state.childProfile;
+    final sessions = state.childSessions;
+    final loaded  = state.childDataLoaded;
+
+    final childName = child != null
+        ? '${child['first_name'] ?? ''} ${child['last_name'] ?? ''}'.trim()
+        : null;
+
+    final scores = sessions
+        .where((s) => s['total_questions'] != null && (s['total_questions'] as int) > 0)
+        .map<int>((s) => ((s['score'] as int? ?? 0) * 100 ~/ (s['total_questions'] as int)))
+        .toList();
+    final avg = scores.isNotEmpty ? scores.reduce((a, b) => a + b) ~/ scores.length : 0;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16).copyWith(bottom: 32),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Welcome card comme teacher
           Container(
             padding: const EdgeInsets.all(28),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
                 colors: [AppColors.primary, Color(0xFFBF4E07)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+                begin: Alignment.topLeft, end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Row(
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Bonjour ${user?.firstName ?? ''} ',
-                          style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
-                      const SizedBox(height: 4),
-                      Text('Suivi de ${_child.$1} aujourd\'hui',
-                          style: GoogleFonts.inter(fontSize: 13, color: Colors.white.withOpacity(0.85))),
-                      const SizedBox(height: 16),
-                      _ParentRoleChip(),
-                    ],
-                  ),
-                ),
+                Expanded(child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Bonjour ${widget.user?.firstName ?? ''} ',
+                        style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
+                    const SizedBox(height: 4),
+                    Text(childName != null ? 'Suivi de $childName' : 'Aucun enfant lié',
+                        style: GoogleFonts.inter(fontSize: 13, color: Colors.white.withOpacity(0.85))),
+                    const SizedBox(height: 16),
+                    _ParentRoleChip(),
+                  ],
+                )),
                 Container(
                   width: 80, height: 80,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15), 
-                    borderRadius: BorderRadius.circular(16),
-                  ),
+                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(16)),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(16),
-                    child: Image.asset(
-                      'assets/images/parent-illustration.webp',
-                      width: 80,
-                      height: 80,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return const Icon(LucideIcons.users, color: Colors.white, size: 40);
-                      },
-                    ),
+                    child: Image.asset('assets/images/parent-illustration.webp',
+                      width: 80, height: 80, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const Icon(LucideIcons.users, color: Colors.white, size: 40)),
                   ),
                 ),
               ],
             ),
           ),
+          const SizedBox(height: 16),
 
-          // ─── Cartes statistiques principales ─────────────────────────────────
-          Row(
-            children: [
-              Expanded(
-                child: _StatCard(
-                  icon: LucideIcons.trendingUp,
-                  title: 'Performance',
-                  value: '${_child.$3}%',
-                  color: AppColors.success,
-                  subtitle: 'Moyenne générale',
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _StatCard(
-                  icon: LucideIcons.calendar,
-                  title: 'Présence',
-                  value: '95%',
-                  color: AppColors.info,
-                  subtitle: 'Ce mois-ci',
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-
-          // ─── Carte de progression améliorée ──────────────────────────────────
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 15,
-                  offset: const Offset(0, 5),
-                ),
-              ],
-              border: Border.all(
-                color: AppColors.border.withOpacity(0.3),
-                width: 1,
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          if (!loaded)
+            const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
+          else if (child == null)
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.border, width: 0.5)),
+              child: Column(children: [
+                Icon(LucideIcons.userX, size: 40, color: AppColors.textSub),
+                const SizedBox(height: 12),
+                Text('Aucun enfant lié à ce compte',
+                    style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text)),
+                const SizedBox(height: 4),
+                Text('Contactez l\'administration pour lier le compte de votre enfant.',
+                    style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSub), textAlign: TextAlign.center),
+              ]),
+            )
+          else ...[
+            Row(
               children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 50,
-                      height: 50,
-                      decoration: BoxDecoration(
-                        color: AppColors.warning.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(
-                        LucideIcons.graduationCap,
-                        color: AppColors.warning,
-                        size: 24,
-                      ),
-                    ),
+                Expanded(child: _StatCard(
+                  icon: LucideIcons.trendingUp, title: 'Performance',
+                  value: scores.isNotEmpty ? '$avg%' : '--',
+                  color: AppColors.success, subtitle: 'Moyenne générale',
+                )),
+                const SizedBox(width: 12),
+                Expanded(child: _StatCard(
+                  icon: LucideIcons.checkCircle, title: 'QSM faits',
+                  value: '${sessions.length}',
+                  color: AppColors.info, subtitle: 'Total complétés',
+                )),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))],
+                border: Border.all(color: AppColors.border.withOpacity(0.3))),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    Container(width: 50, height: 50,
+                      decoration: BoxDecoration(color: AppColors.warning.withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
+                      child: const Icon(LucideIcons.graduationCap, color: AppColors.warning, size: 24)),
                     const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${_child.$1}',
-                            style: GoogleFonts.inter(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.text,
-                            ),
-                          ),
-                          Text(
-                            'Progression académique',
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: AppColors.textSub,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(childName ?? '',
+                          style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.text)),
+                      Text('Progression académique',
+                          style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSub)),
+                    ])),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: AppColors.warning.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        '${_child.$3}%',
-                        style: GoogleFonts.inter(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.warning,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: AppColors.border.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: FractionallySizedBox(
-                    alignment: Alignment.centerLeft,
-                    widthFactor: _child.$3 / 100,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            AppColors.warning,
-                            AppColors.warning.withOpacity(0.8),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // ─── Section activités récentes ─────────────────────────────────────
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 15,
-                  offset: const Offset(0, 5),
-                ),
-              ],
-              border: Border.all(
-                color: AppColors.border.withOpacity(0.3),
-                width: 1,
+                      decoration: BoxDecoration(color: AppColors.warning.withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
+                      child: Text('$avg%',
+                          style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.warning))),
+                  ]),
+                  const SizedBox(height: 16),
+                  ClipRRect(borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: avg / 100, minHeight: 8, backgroundColor: AppColors.border,
+                      valueColor: const AlwaysStoppedAnimation(AppColors.warning))),
+                ],
               ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      'Activités récentes',
-                      style: GoogleFonts.inter(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.text,
-                      ),
-                    ),
+            const SizedBox(height: 20),
+
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))],
+                border: Border.all(color: AppColors.border.withOpacity(0.3))),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    Text('Activités récentes',
+                        style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.text)),
                     const Spacer(),
-                    Text(
-                      'Voir tout',
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _ActivityItem(
-                  icon: LucideIcons.fileText,
-                  title: 'Biologie Cellulaire',
-                  subtitle: 'Note obtenue',
-                  value: '87/100',
-                  color: AppColors.success,
-                  time: '25 Avr',
-                ),
-                _ActivityItem(
-                  icon: LucideIcons.bookOpen,
-                  title: 'Mitose et Méiose',
-                  subtitle: 'Note obtenue',
-                  value: '92/100',
-                  color: AppColors.success,
-                  time: '22 Avr',
-                ),
-                _ActivityItem(
-                  icon: LucideIcons.testTube,
-                  title: 'ADN et Génétique',
-                  subtitle: 'Note obtenue',
-                  value: '78/100',
-                  color: AppColors.warning,
-                  time: '18 Avr',
-                ),
-              ],
+                    Text('Voir tout', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.primary)),
+                  ]),
+                  const SizedBox(height: 16),
+                  if (sessions.isEmpty)
+                    Text('Aucune activité encore.', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSub))
+                  else
+                    ...sessions.take(3).map((s) {
+                      final total = (s['total_questions'] as int? ?? 0);
+                      final score = (s['score'] as int? ?? 0);
+                      final pct   = total > 0 ? (score * 100 ~/ total) : 0;
+                      final title = (s['courses'] as Map?)?['title'] as String? ?? 'QSM';
+                      final dt    = s['completed_at'] != null ? DateTime.tryParse(s['completed_at']) : null;
+                      final dateStr = dt != null ? '${dt.day}/${dt.month}' : '';
+                      return _ActivityItem(
+                        icon: LucideIcons.fileText, title: title,
+                        subtitle: 'Score obtenu', value: '$pct%',
+                        color: pct >= 80 ? AppColors.success : pct >= 60 ? AppColors.primary : AppColors.warning,
+                        time: dateStr,
+                      );
+                    }),
+                ],
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -542,11 +461,43 @@ class _NoteTile extends StatelessWidget {
   );
 }
 
-class _StatsTab extends StatelessWidget {
-  static const _scores = [65, 72, 80, 92, 78, 87, 75];
-  static const _days   = ['Lu', 'Ma', 'Me', 'Je', 'Ve', 'Sa', 'Di'];
+class _StatsTab extends StatefulWidget {
+  @override
+  State<_StatsTab> createState() => _StatsTabState();
+}
+
+class _StatsTabState extends State<_StatsTab> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => context.read<AppState>().loadChildData());
+  }
+
   @override
   Widget build(BuildContext context) {
+    final sessions = context.watch<AppState>().childSessions;
+    final loaded   = context.watch<AppState>().childDataLoaded;
+    final dayLabels = ['Lu', 'Ma', 'Me', 'Je', 'Ve', 'Sa', 'Di'];
+
+    // Scores des 7 derniers jours
+    final Map<int, List<int>> byDay = {};
+    for (final s in sessions) {
+      if (s['completed_at'] != null && s['total_questions'] != null && (s['total_questions'] as int) > 0) {
+        final dt   = DateTime.tryParse(s['completed_at']);
+        if (dt != null) {
+          final diff = DateTime.now().difference(dt).inDays;
+          if (diff >= 0 && diff < 7) {
+            final idx = 6 - diff;
+            byDay[idx] = [...(byDay[idx] ?? []), ((s['score'] as int? ?? 0) * 100 ~/ (s['total_questions'] as int))];
+          }
+        }
+      }
+    }
+    final scores = List.generate(7, (i) {
+      final day = byDay[i] ?? [];
+      return day.isNotEmpty ? day.reduce((a, b) => a + b) ~/ day.length : 0;
+    });
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -555,81 +506,49 @@ class _StatsTab extends StatelessWidget {
         Container(
           height: 130, padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
           decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.border, width: 0.5)),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            for (int i = 0; i < _scores.length; i++) ...[
-              if (i > 0) const SizedBox(width: 8),
-              Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.end, children: [
-                Text('${_scores[i]}', style: GoogleFonts.nunito(fontSize: 9, fontWeight: FontWeight.w800, color: AppColors.green)),
-                const SizedBox(height: 3),
-                SizedBox(
-                  height: 60 * (_scores[i] / 100),
-                  child: Container(decoration: BoxDecoration(color: AppColors.green, borderRadius: const BorderRadius.vertical(top: Radius.circular(4))))),
-                const SizedBox(height: 4),
-                Text(_days[i], style: GoogleFonts.nunito(fontSize: 9, color: AppColors.textSub)),
-              ])),
-            ],
-          ]),
+          child: loaded
+            ? Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                for (int i = 0; i < scores.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 8),
+                  Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.end, children: [
+                    Text('${scores[i]}', style: GoogleFonts.nunito(fontSize: 9, fontWeight: FontWeight.w800, color: AppColors.green)),
+                    const SizedBox(height: 3),
+                    SizedBox(height: scores[i] > 0 ? 60 * (scores[i] / 100) : 2,
+                      child: Container(decoration: BoxDecoration(color: AppColors.green, borderRadius: const BorderRadius.vertical(top: Radius.circular(4))))),
+                    const SizedBox(height: 4),
+                    Text(dayLabels[i], style: GoogleFonts.nunito(fontSize: 9, color: AppColors.textSub)),
+                  ])),
+                ],
+              ])
+            : const Center(child: CircularProgressIndicator()),
         ),
         const SizedBox(height: 16),
-        Text(
-          'Par matière',
-          style: GoogleFonts.nunito(
-            fontSize: 14,
-            fontWeight: FontWeight.w800,
-            color: AppColors.text,
-          ),
-        ),
+        Text('Activités récentes', style: GoogleFonts.nunito(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text)),
         const SizedBox(height: 10),
-        ParentSubjectProgress(
-          subject: 'Biologie',
-          progress: 0.87,
-          score: 87,
-          color: AppColors.success,
-          icon: LucideIcons.dna,
-          teacherName: 'Prof. Fatima Z.',
-          nextClass: 'Chapitre 5: Photosynthèse',
-          onTap: () {
-            // Navigation vers détails de la matière
-          },
-        ),
-        ParentSubjectProgress(
-          subject: 'Maths',
-          progress: 0.64,
-          score: 64,
-          color: AppColors.primary,
-          icon: LucideIcons.functionSquare,
-          teacherName: 'Prof. Hassan M.',
-          nextClass: 'Exercices sur les fonctions',
-          onTap: () {
-            // Navigation vers détails de la matière
-          },
-        ),
-        ParentSubjectProgress(
-          subject: 'Physique',
-          progress: 0.76,
-          score: 76,
-          color: AppColors.info,
-          icon: LucideIcons.zap,
-          teacherName: 'Prof. Laila B.',
-          nextClass: 'Laboratoire d\'électricité',
-          onTap: () {
-            // Navigation vers détails de la matière
-          },
-        ),
+        if (!loaded)
+          const Center(child: CircularProgressIndicator())
+        else if (sessions.isEmpty)
+          Text('Aucune session pour l\'instant.', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSub))
+        else
+          ...sessions.take(5).map((s) {
+            final total = (s['total_questions'] as int? ?? 0);
+            final score = (s['score'] as int? ?? 0);
+            final pct   = total > 0 ? (score * 100 ~/ total) : 0;
+            final title = (s['courses'] as Map?)?['title'] as String? ?? 'QSM';
+            final dt    = s['completed_at'] != null ? DateTime.tryParse(s['completed_at']) : null;
+            final dateStr = dt != null ? '${dt.day}/${dt.month}/${dt.year}' : '';
+            return _NoteTile(title: title, score: pct, date: dateStr);
+          }),
       ]),
     );
   }
 }
 
 class _ContactTab extends StatelessWidget {
-  static const _teachers = [
-    ('Prof. Fatima Z.', 'Biologie', LucideIcons.microscope, LucideIcons.testTube),
-    ('Prof. Hassan M.', 'Mathématiques', LucideIcons.calculator, LucideIcons.hash),
-    ('Prof. Laila B.',  'Physique-Chimie', LucideIcons.atom, LucideIcons.settings),
-  ];
-
   @override
   Widget build(BuildContext context) {
+    final teachers = context.watch<AppState>().childTeachers;
+    final loaded   = context.watch<AppState>().childDataLoaded;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -646,39 +565,46 @@ class _ContactTab extends StatelessWidget {
         const SizedBox(height: 16),
         _SectionLabel('Enseignants'),
         const SizedBox(height: 10),
-        ..._teachers.map((t) => Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border, width: 0.5)),
-          child: Row(children: [
-            Container(width: 44, height: 44, decoration: BoxDecoration(color: AppColors.primaryLight, borderRadius: BorderRadius.circular(12)),
-              child: Icon(t.$3, size: 22, color: AppColors.primary)),
-            const SizedBox(width: 12),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(t.$1, style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)),
-              Text(t.$2, style: GoogleFonts.nunito(fontSize: 11, color: AppColors.textSub)),
-            ])),
-            GestureDetector(
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ConversationScreen(
-                      teacherName: t.$1,
-                      subject: t.$2,
-                      teacherIcon: t.$4,
-                    ),
-                  ),
-                );
-              },
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: AppColors.primaryLight, borderRadius: BorderRadius.circular(10)),
-                child: const Icon(LucideIcons.messageSquare, size: 18, color: AppColors.primary),
-              ),
-            ),
-          ]),
-        )),
+        if (!loaded)
+          const Center(child: CircularProgressIndicator())
+        else if (teachers.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border, width: 0.5)),
+            child: Column(children: [
+              Icon(LucideIcons.users, size: 36, color: AppColors.textSub),
+              const SizedBox(height: 8),
+              Text('Aucun enseignant trouvé', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSub)),
+            ]),
+          )
+        else
+          ...teachers.map((t) {
+            final name    = t['teacher_name'] as String? ?? 'Enseignant';
+            final subject = t['category'] as String? ?? '';
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border, width: 0.5)),
+              child: Row(children: [
+                Container(width: 44, height: 44,
+                  decoration: BoxDecoration(color: AppColors.primaryLight, borderRadius: BorderRadius.circular(12)),
+                  child: const Icon(LucideIcons.graduationCap, size: 22, color: AppColors.primary)),
+                const SizedBox(width: 12),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(name, style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)),
+                  Text(subject, style: GoogleFonts.nunito(fontSize: 11, color: AppColors.textSub)),
+                ])),
+                GestureDetector(
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => ConversationScreen(teacherName: name, subject: subject, teacherIcon: LucideIcons.messageSquare))),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: AppColors.primaryLight, borderRadius: BorderRadius.circular(10)),
+                    child: const Icon(LucideIcons.messageSquare, size: 18, color: AppColors.primary)),
+                ),
+              ]),
+            );
+          }),
       ]),
     );
   }

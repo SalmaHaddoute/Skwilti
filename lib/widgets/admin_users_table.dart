@@ -4,7 +4,9 @@ import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 
 class AdminUsersTable extends StatelessWidget {
-  const AdminUsersTable({super.key});
+  final List<Map<String, dynamic>> users;
+  
+  const AdminUsersTable({super.key, required this.users});
 
   @override
   Widget build(BuildContext context) {
@@ -34,7 +36,7 @@ class AdminUsersTable extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          _UsersTable(),
+          _UsersTable(users: users),
         ],
       ),
     );
@@ -42,56 +44,22 @@ class AdminUsersTable extends StatelessWidget {
 }
 
 class _UsersTable extends StatelessWidget {
-  final List<UserData> _users = [
-    UserData(
-      name: 'Amira Benali',
-      email: 'amira.benali@email.com',
-      role: 'Étudiant',
-      status: 'Actif',
-      avatar: 'AB',
-      joinDate: '15 Avr 2024',
-      subscription: 'Premium',
-    ),
-    UserData(
-      name: 'Prof. Fatima Z.',
-      email: 'fatima.zahra@ecole.fr',
-      role: 'Enseignant',
-      status: 'Actif',
-      avatar: 'FZ',
-      joinDate: '10 Avr 2024',
-      subscription: 'Premium',
-    ),
-    UserData(
-      name: 'Youssef M.',
-      email: 'youssef.mohamed@email.com',
-      role: 'Étudiant',
-      status: 'Actif',
-      avatar: 'YM',
-      joinDate: '08 Avr 2024',
-      subscription: 'Gratuit',
-    ),
-    UserData(
-      name: 'Sara K.',
-      email: 'sara.karim@email.com',
-      role: 'Étudiant',
-      status: 'Inactif',
-      avatar: 'SK',
-      joinDate: '05 Avr 2024',
-      subscription: 'Gratuit',
-    ),
-    UserData(
-      name: 'Parent Karim',
-      email: 'karim.parent@email.com',
-      role: 'Parent',
-      status: 'Actif',
-      avatar: 'KP',
-      joinDate: '02 Avr 2024',
-      subscription: 'Premium',
-    ),
-  ];
+  final List<Map<String, dynamic>> users;
+
+  const _UsersTable({required this.users});
 
   @override
   Widget build(BuildContext context) {
+    if (users.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(16.0),
+        child: Center(child: Text('Aucun utilisateur récent')),
+      );
+    }
+    
+    // Ne prendre que les 5 plus récents
+    final recentUsers = users.take(5).toList();
+
     return Column(
       children: [
         // Header du tableau
@@ -160,7 +128,45 @@ class _UsersTable extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         // Lignes du tableau
-        ..._users.map((user) => _UserRow(user: user)).toList(),
+        ...recentUsers.map((user) {
+          final roleMap = {
+            'student': 'Étudiant',
+            'teacher': 'Enseignant',
+            'parent': 'Parent',
+            'admin': 'Admin',
+          };
+          final role = roleMap[user['role']] ?? 'Utilisateur';
+          
+          final firstName = user['first_name'] as String? ?? '';
+          final lastName = user['last_name'] as String? ?? '';
+          final fullName = ('$firstName $lastName').trim();
+          final displayName = fullName.isNotEmpty ? fullName : (user['email'] as String? ?? 'Inconnu');
+          final names = displayName.split(' ');
+          final initials = names.length > 1 
+              ? '${names[0][0]}${names[1][0]}'.toUpperCase()
+              : displayName.isNotEmpty ? displayName.substring(0, 1).toUpperCase() : 'U';
+
+          // Format date (très simple pour l'exemple)
+          String joinDate = 'Récent';
+          if (user['created_at'] != null) {
+            final date = DateTime.tryParse(user['created_at']);
+            if (date != null) {
+              joinDate = '${date.day}/${date.month}/${date.year}';
+            }
+          }
+
+          return _UserRow(
+            user: UserData(
+              name: displayName,
+              email: user['email'] as String? ?? 'N/A',
+              role: role,
+              status: 'Actif',
+              avatar: initials,
+              joinDate: joinDate,
+              subscription: user['subscription'] == 'premium' ? 'Premium' : 'Gratuit',
+            ),
+          );
+        }).toList(),
       ],
     );
   }

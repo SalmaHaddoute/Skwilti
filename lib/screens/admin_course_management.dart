@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
+import '../services/app_state.dart';
+import 'lesson_upload_screen.dart';
 
 class AdminCourseManagementScreen extends StatefulWidget {
   final String filiere;
@@ -18,35 +21,72 @@ class AdminCourseManagementScreen extends StatefulWidget {
 }
 
 class _AdminCourseManagementScreenState extends State<AdminCourseManagementScreen> {
-  // Cours par filière → matière → semestre
-  static const _curriculum = <String, Map<String, List<Map<String, dynamic>>>>{
-    'Tronc Commun': {
-      'Maths': [
-        {'title': 'Semestre 1', 'count': 12, 'lessons': ['Algèbre', 'Géométrie', 'Fonctions', 'Statistiques']},
-        {'title': 'Semestre 2', 'count': 14, 'lessons': ['Nombres complexes', 'Suites', 'Intégrales', 'Probabilités']},
-      ],
-      'Physique-Chimie': [
-        {'title': 'Semestre 1', 'count': 10, 'lessons': ['Mécanique', 'Thermodynamique', 'Optique']},
-        {'title': 'Semestre 2', 'count': 11, 'lessons': ['Électricité', 'Chimie organique', 'Réactions chimiques']},
-      ],
-    },
-    '1ère Année Baccalauréat': {
-      'Maths': [
-        {'title': 'Semestre 1', 'count': 15, 'lessons': ['Limites', 'Dérivées', 'Fonctions exponentielles']},
-        {'title': 'Semestre 2', 'count': 16, 'lessons': ['Logarithmes', 'Trigonométrie', 'Géométrie analytique']},
-      ],
-    },
-    '2ème Année Baccalauréat': {
-      'Maths': [
-        {'title': 'Semestre 1', 'count': 18, 'lessons': ['Espaces vectoriels', 'Matrices', 'Systèmes linéaires']},
-        {'title': 'Semestre 2', 'count': 20, 'lessons': ['Probabilités avancées', 'Statistiques inférentielles', 'Séries']},
-      ],
-    },
-  };
+  List<Map<String, dynamic>> _courses = [];
+  bool _isLoading = false;
 
-  List<Map<String, dynamic>> get _currentSemesters {
-    final curriculum = _curriculum[widget.filiere]?[widget.subject] ?? [];
-    return curriculum;
+  @override
+  void initState() {
+    super.initState();
+    _loadCourses();
+  }
+
+  Future<void> _loadCourses() async {
+    setState(() => _isLoading = true);
+    try {
+      await context.read<AppState>().loadAdminCourses();
+      final allCourses = context.read<AppState>().adminCourses;
+      // Filtrer par filière et matière si ces colonnes existent
+      setState(() {
+        _courses = allCourses.where((course) {
+          final courseFiliere = course['filiere'] as String?;
+          final courseSubject = course['subject'] as String?;
+          return (courseFiliere == widget.filiere || courseFiliere == null) &&
+                 (courseSubject == widget.subject || courseSubject == null);
+        }).toList();
+      });
+    } catch (e) {
+      print('⚠️ Error loading courses: $e');
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _deleteCourse(String courseId) async {
+    try {
+      await context.read<AppState>().deleteCourse(courseId);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Cours supprimé', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+          backgroundColor: AppColors.error,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erreur: $e', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+          backgroundColor: AppColors.error,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> _showAddCourseDialog() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => LessonUploadScreen(
+          filiere: widget.filiere,
+          subject: widget.subject,
+          semester: 'Semestre 1',
+        ),
+      ),
+    );
+    
+    if (result == true) {
+      _loadCourses();
+    }
   }
 
   @override
@@ -69,6 +109,11 @@ class _AdminCourseManagementScreenState extends State<AdminCourseManagementScree
           ),
         ),
         actions: [
+          IconButton(
+            onPressed: _showAddCourseDialog,
+            icon: Icon(LucideIcons.plus, color: AppColors.primary),
+            tooltip: 'Ajouter un cours',
+          ),
           Container(
             margin: const EdgeInsets.only(right: 16),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -164,16 +209,16 @@ class _AdminCourseManagementScreenState extends State<AdminCourseManagementScree
                     children: [
                       Expanded(
                         child: _QuickStat(
-                          label: 'Semestres',
-                          value: '${_currentSemesters.length}',
+                          label: 'Cours',
+                          value: '${_courses.length}',
                           icon: LucideIcons.layers,
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: _QuickStat(
-                          label: 'Total leçons',
-                          value: '${_currentSemesters.fold<int>(0, (sum, sem) => sum + (sem['count'] as int))}',
+                          label: 'Total',
+                          value: '${context.watch<AppState>().adminCourses.length}',
                           icon: LucideIcons.fileText,
                         ),
                       ),
@@ -186,7 +231,7 @@ class _AdminCourseManagementScreenState extends State<AdminCourseManagementScree
 
             // Courses List
             Text(
-              'Liste des semestres',
+              'Liste des cours',
               style: GoogleFonts.inter(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
@@ -195,7 +240,9 @@ class _AdminCourseManagementScreenState extends State<AdminCourseManagementScree
             ),
             const SizedBox(height: 16),
             
-            if (_currentSemesters.isEmpty)
+            if (_isLoading)
+              const Center(child: CircularProgressIndicator())
+            else if (_courses.isEmpty)
               Container(
                 padding: const EdgeInsets.all(32),
                 decoration: BoxDecoration(
@@ -221,7 +268,7 @@ class _AdminCourseManagementScreenState extends State<AdminCourseManagementScree
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Aucun cours disponible pour cette matière',
+                      'Aucun cours disponible pour ${widget.filiere} - ${widget.subject}',
                       style: GoogleFonts.inter(
                         fontSize: 12,
                         color: AppColors.textSub,
@@ -234,29 +281,13 @@ class _AdminCourseManagementScreenState extends State<AdminCourseManagementScree
               ListView.separated(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                itemCount: _currentSemesters.length,
+                itemCount: _courses.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 12),
                 itemBuilder: (context, i) {
-                  final sem = _currentSemesters[i];
-                  return _SemesterCard(
-                    title: sem['title'] as String,
-                    lessonCount: sem['count'] as int,
-                    lessons: (sem['lessons'] as List<String>),
-                    onDelete: () {
-                      setState(() {
-                        // Remove semester logic would go here
-                      });
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            '${sem['title']} supprimé',
-                            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-                          ),
-                          backgroundColor: AppColors.error,
-                          duration: const Duration(seconds: 2),
-                        ),
-                      );
-                    },
+                  final course = _courses[i];
+                  return _CourseCard(
+                    course: course,
+                    onDelete: () => _deleteCourse(course['id']),
                   );
                 },
               ),
@@ -319,16 +350,12 @@ class _QuickStat extends StatelessWidget {
   }
 }
 
-class _SemesterCard extends StatelessWidget {
-  final String title;
-  final int lessonCount;
-  final List<String> lessons;
+class _CourseCard extends StatelessWidget {
+  final Map<String, dynamic> course;
   final VoidCallback onDelete;
 
-  const _SemesterCard({
-    required this.title,
-    required this.lessonCount,
-    required this.lessons,
+  const _CourseCard({
+    required this.course,
     required this.onDelete,
   });
 
@@ -351,7 +378,7 @@ class _SemesterCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      title,
+                      course['title'] ?? 'Sans titre',
                       style: GoogleFonts.inter(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
@@ -359,7 +386,7 @@ class _SemesterCard extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '$lessonCount leçons',
+                      course['file_name'] ?? 'Sans fichier',
                       style: GoogleFonts.inter(
                         fontSize: 12,
                         color: AppColors.textSub,
@@ -385,75 +412,6 @@ class _SemesterCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          if (lessons.isNotEmpty)
-            Column(
-              children: lessons.map((lesson) {
-                return Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.only(bottom: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.border, width: 0.5),
-                  ),
-                  child: Row(
-                    children: [
-                      // Image de la leçon
-                      Container(
-                        width: 60,
-                        height: 60,
-                        decoration: BoxDecoration(
-                          borderRadius: const BorderRadius.horizontal(left: Radius.circular(8)),
-                          image: const DecorationImage(
-                            image: AssetImage('assets/images/image.png'),
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  lesson,
-                                  style: GoogleFonts.inter(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.text,
-                                  ),
-                                ),
-                              ),
-                              GestureDetector(
-                                onTap: () {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Leçon "$lesson" supprimée',
-                                        style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-                                      ),
-                                      backgroundColor: AppColors.error,
-                                      duration: const Duration(seconds: 2),
-                                    ),
-                                  );
-                                },
-                                child: Icon(
-                                  LucideIcons.x,
-                                  size: 16,
-                                  color: AppColors.error,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
         ],
       ),
     );

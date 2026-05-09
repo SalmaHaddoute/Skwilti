@@ -136,15 +136,19 @@ class ProfileScreen extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: AppColors.green.withOpacity(0.1),
+                      color: user.subscription == SubscriptionType.premium 
+                          ? AppColors.warning.withOpacity(0.1)
+                          : AppColors.green.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      'GRATUIT',
+                      user.subscription == SubscriptionType.premium ? 'PREMIUM' : 'GRATUIT',
                       style: GoogleFonts.nunito(
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
-                        color: AppColors.green,
+                        color: user.subscription == SubscriptionType.premium 
+                            ? AppColors.warning
+                            : AppColors.green,
                       ),
                     ),
                   ),

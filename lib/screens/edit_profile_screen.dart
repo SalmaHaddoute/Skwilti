@@ -278,33 +278,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     });
 
     try {
-      // Simuler la sauvegarde
-      await Future.delayed(const Duration(seconds: 2));
-      
-      // Mettre à jour l'utilisateur dans l'état
-      final appState = Provider.of<AppState>(context, listen: false);
-      final currentUser = appState.currentUser;
-      
-      if (currentUser != null) {
-        final updatedUser = User(
-          id: currentUser.id,
-          email: _emailController.text,
-          firstName: _firstNameController.text,
-          lastName: _lastNameController.text,
-          role: currentUser.role,
-          subscription: currentUser.subscription,
-          createdAt: currentUser.createdAt,
-          lastActiveAt: currentUser.lastActiveAt,
-          points: currentUser.points,
-          dailyQsmCount: currentUser.dailyQsmCount,
-          dailyQsmResetDate: currentUser.dailyQsmResetDate,
-          linkedChildId: currentUser.linkedChildId,
-          linkedParentIds: currentUser.linkedParentIds,
-        );
-        
-        // Mettre à jour l'état (à implémenter dans AppState)
-        // appState.updateUser(updatedUser);
-      }
+      await context.read<AppState>().updateProfile(
+        firstName: _firstNameController.text,
+        lastName: _lastNameController.text,
+        email: _emailController.text,
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -319,7 +297,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Erreur lors de la mise à jour du profil'),
+            content: Text('Erreur lors de la mise à jour du profil: $e'),
             backgroundColor: AppColors.error,
           ),
         );

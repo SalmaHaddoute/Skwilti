@@ -284,32 +284,6 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
                     style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.primary)),
                 ),
               ]),
-              const SizedBox(height: 24),
-              // Demo accounts
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryLight,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.primary.withOpacity(0.2), width: 0.5),
-                ),
-                child: Column(children: [
-                  Row(children: [
-                    const Icon(LucideIcons.zap, size: 14, color: AppColors.primary),
-                    const SizedBox(width: 6),
-                    Text('Comptes de démonstration', style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.primary)),
-                  ]),
-                  const SizedBox(height: 10),
-                  ...[
-                    ('Enseignant', LucideIcons.graduationCap, 'teacher@skwilti.com'),
-                    ('Étudiant',   LucideIcons.bookOpen,      'student@skwilti.com'),
-                    ('Parent',     LucideIcons.heart,         'parent@skwilti.com'),
-                    ('Admin',      LucideIcons.award,        'admin@skwilti.com'),
-                  ].map((d) => _DemoTile(label: d.$1, icon: d.$2, email: d.$3,
-                      onTap: () { _emailCtrl.text = d.$3; _passCtrl.text = 'password'; setState(() => _isLogin = true); })),
-                ]),
-              ),
               const SizedBox(height: 32),
             ]),
           ),
@@ -401,26 +375,3 @@ class _Field extends StatelessWidget {
   }
 }
 
-class _DemoTile extends StatelessWidget {
-  final String label, email;
-  final IconData icon;
-  final VoidCallback onTap;
-  const _DemoTile({required this.label, required this.icon, required this.email, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Row(children: [
-          Container(width: 28, height: 28, decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
-            child: Icon(icon, size: 14, color: AppColors.primary)),
-          const SizedBox(width: 10),
-          Expanded(child: Text('$label — $email', style: GoogleFonts.nunito(fontSize: 11, color: AppColors.textSecondary, fontWeight: FontWeight.w600))),
-          const Icon(LucideIcons.arrowLeft, size: 13, color: AppColors.primary),
-        ]),
-      ),
-    );
-  }
-}

@@ -11,6 +11,7 @@ import '../widgets/skwilti_nav.dart';
 import 'create_classroom_screen.dart';
 import 'create_room_screen.dart';
 import 'upload_screen.dart';
+import 'lesson_upload_screen.dart';
 import 'profile_screen.dart';
 
 class TeacherDashboard extends StatefulWidget {
@@ -96,7 +97,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
       context: context,
       backgroundColor: Colors.transparent,
       builder: (_) => _CreateOptionsSheet(
-        onUpload: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => const UploadScreen())); },
+        onUpload: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => const LessonUploadScreen(filiere: 'Général', subject: 'Général', semester: 'Général'))); },
         onClassroom: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateClassroomScreen())); },
         onRoom: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateRoomScreen())); },
         onQsm: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => const UploadScreen())); },
@@ -106,17 +107,30 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
 }
 
 // ── Home Tab ─────────────────────────────────────────────────
-class _HomeTab extends StatelessWidget {
+class _HomeTab extends StatefulWidget {
   final User? user;
   final Function(int) onNavigate;
   const _HomeTab({this.user, required this.onNavigate});
+  @override
+  State<_HomeTab> createState() => _HomeTabState();
+}
 
-  
+class _HomeTabState extends State<_HomeTab> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<AppState>().loadTeacherCourses();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final stats = context.watch<AppState>().userStats;
+    final stats      = context.watch<AppState>().userStats;
     final classrooms = context.watch<AppState>().userClassrooms;
-    final courses = context.watch<AppState>().recentCourses;
+    final courses    = context.watch<AppState>().teacherCourses;
+    final activity   = context.watch<AppState>().weeklyActivity;
+    final loaded     = context.watch<AppState>().teacherCoursesLoaded;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16).copyWith(bottom: 24),
@@ -140,13 +154,13 @@ class _HomeTab extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Bonjour ${user?.firstName ?? ''} ',
+                      Text('Bonjour ${widget.user?.firstName ?? ''} ',
                           style: GoogleFonts.nunito(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
                       const SizedBox(height: 4),
                       Text('Prêt à créer des QSM aujourd\'hui ?',
                           style: GoogleFonts.nunito(fontSize: 13, color: Colors.white.withOpacity(0.85))),
                       const SizedBox(height: 16),
-                      _SubscriptionChip(user: user),
+                      _SubscriptionChip(user: widget.user),
                     ],
                   ),
                 ),
@@ -176,205 +190,100 @@ class _HomeTab extends StatelessWidget {
           // Stats row
           Row(
             children: [
-              Expanded(child: _StatCard(label: 'QSM créés', value: '${stats?.totalQsmCreated ?? 12}', icon: LucideIcons.fileText, color: AppColors.primary)),
+              Expanded(child: _StatCard(label: 'Cours', value: '${courses.length}', icon: LucideIcons.fileText, color: AppColors.primary)),
               const SizedBox(width: 10),
-              Expanded(child: _StatCard(label: 'Points', value: '${stats?.totalPoints ?? 340}', icon: LucideIcons.award, color: AppColors.green)),
+              Expanded(child: _StatCard(label: 'Points', value: '${stats?.totalPoints ?? 0}', icon: LucideIcons.award, color: AppColors.green)),
               const SizedBox(width: 10),
-              Expanded(child: _StatCard(label: 'Classes', value: '${classrooms.length + 3}', icon: LucideIcons.users, color: const Color(0xFF9B59B6))),
+              Expanded(child: _StatCard(label: 'Classes', value: '${classrooms.length}', icon: LucideIcons.users, color: const Color(0xFF9B59B6))),
             ],
           ),
           const SizedBox(height: 20),
-          // QSM prêt à faire - Design simple
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.primary.withOpacity(0.2), width: 1),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // ── Header avec icône et badge ────────────────────────────────
-                Row(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(
-                        LucideIcons.fileText,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Text(
-                                'QSM Prêt à lancer',
-                                style: GoogleFonts.inter(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.text,
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: AppColors.success,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                  '15 questions',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Mathématiques - Chapitre 3',
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              color: AppColors.textSub,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                
-                // ─── Actions simples ───────────────────────────────────────────
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () {/* Continuer l'édition */},
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: AppColors.primary,
-                          side: BorderSide(color: AppColors.primary),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        child: Text(
-                          'Continuer l\'édition',
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () {/* Lancer le QSM */},
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        child: Text(
-                          'Lancer le QSM',
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
+          // Dernier cours uploadé (données réelles)
+          if (loaded && courses.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.primary.withOpacity(0.2), width: 1),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40, height: 40,
+                    decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(8)),
+                    child: const Icon(LucideIcons.fileText, color: Colors.white, size: 20),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(courses.first['title'] as String? ?? 'Cours sans titre',
+                          style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text),
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 4),
+                      Text(courses.first['subject'] as String? ?? '',
+                          style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSub)),
+                    ],
+                  )),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(color: AppColors.success, borderRadius: BorderRadius.circular(12)),
+                    child: Text('${courses.first['question_count'] ?? 0} questions',
+                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
+                  ),
+                ],
+              ),
+            )
+          else if (!loaded)
+            const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator())),
           const SizedBox(height: 20),
-          // Diagramme d'activité de la semaine
+          // Diagramme d'activité de la semaine (données réelles)
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: AppColors.border, width: 0.5),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Activité cette semaine',
-                  style: GoogleFonts.nunito(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.text,
-                  ),
-                ),
+                Text('Activité cette semaine',
+                    style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text)),
                 const SizedBox(height: 16),
-                Container(
+                SizedBox(
                   height: 150,
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       for (int i = 0; i < 7; i++) ...[
                         if (i > 0) const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
+                        Expanded(child: Builder(builder: (_) {
+                          final val = activity[i] ?? 0;
+                          final maxVal = activity.values.fold(1, (a, b) => a > b ? a : b);
+                          return Column(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [
-                              Text(
-                                '${[45, 38, 52, 41, 65, 28, 19][i]}',
-                                style: GoogleFonts.nunito(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.primary,
-                                ),
-                              ),
+                              Text('$val', style: GoogleFonts.nunito(fontSize: 10, fontWeight: FontWeight.w800, color: AppColors.primary)),
                               const SizedBox(height: 4),
                               Container(
-                                height: 80 * ([45, 38, 52, 41, 65, 28, 19][i] / 70),
+                                height: maxVal > 0 ? 80 * (val / maxVal) : 4,
                                 decoration: BoxDecoration(
-                                  gradient: LinearGradient(
+                                  gradient: const LinearGradient(
                                     colors: [AppColors.primary, AppColors.primary2],
-                                    begin: Alignment.bottomCenter,
-                                    end: Alignment.topCenter,
+                                    begin: Alignment.bottomCenter, end: Alignment.topCenter,
                                   ),
-                                  borderRadius: const BorderRadius.vertical(
-                                    top: Radius.circular(4),
-                                  ),
+                                  borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
                                 ),
                               ),
                               const SizedBox(height: 6),
-                              Text(
-                                ['L', 'M', 'M', 'J', 'V', 'S', 'D'][i],
-                                style: GoogleFonts.nunito(
-                                  fontSize: 10,
-                                  color: AppColors.textSub,
-                                ),
-                              ),
+                              Text(['L','M','M','J','V','S','D'][i],
+                                  style: GoogleFonts.nunito(fontSize: 10, color: AppColors.textSub)),
                             ],
-                          ),
-                        ),
+                          );
+                        })),
                       ],
                     ],
                   ),
@@ -397,31 +306,38 @@ class _HomeTab extends StatelessWidget {
               _QuickAction(icon: LucideIcons.fileText, label: 'Créer QSM', sub: 'Questions/Réponses', color: AppColors.primary,
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const UploadScreen()))),
               _QuickAction(icon: LucideIcons.upload, label: 'Uploader cours', sub: 'PDF, DOCX', color: AppColors.warning,
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const UploadScreen()))),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LessonUploadScreen(filiere: 'Général', subject: 'Général', semester: 'Général')))),
             ],
           ),
           const SizedBox(height: 20),
-          SectionTitle(title: 'Cours uploadés récents', action: 'Voir tout', onAction: () => onNavigate(4)),
+          SectionTitle(title: 'Cours uploadés récents', action: 'Voir tout', onAction: () => widget.onNavigate(4)),
           const SizedBox(height: 10),
-          
-          // Cours par défaut avec image spécifiée
-          _UploadedCourseTile(
-            title: 'Introduction à la Programmation',
-            fileName: 'programming_intro.pdf',
-            filiere: '2ème Année Baccalauréat',
-            subject: 'Maths',
-            uploadedAt: DateTime.now().subtract(const Duration(days: 3)).toIso8601String(),
-            isDefault: true,
-          ),
-          
-          // Cours uploadés par l'utilisateur
-          ...context.watch<AppState>().uploadedLessons.take(2).map((lesson) => _UploadedCourseTile(
-            title: lesson['title'] as String,
-            fileName: lesson['fileName'] as String,
-            filiere: lesson['filiere'] as String,
-            subject: lesson['subject'] as String,
-            uploadedAt: lesson['uploadedAt'] as String,
-          )),
+          if (!loaded)
+            const Center(child: CircularProgressIndicator())
+          else if (courses.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white, borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border, width: 0.5),
+              ),
+              child: Column(children: [
+                Icon(LucideIcons.fileText, size: 36, color: AppColors.textSub),
+                const SizedBox(height: 8),
+                Text('Aucun cours uploadé', style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSub)),
+                const SizedBox(height: 4),
+                Text('Cliquez sur "Créer" pour uploader votre premier cours.',
+                    style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSub), textAlign: TextAlign.center),
+              ]),
+            )
+          else
+            ...courses.take(3).map((course) => _UploadedCourseTile(
+              title: course['title'] as String? ?? 'Sans titre',
+              fileName: course['file_name'] as String? ?? '',
+              filiere: course['description'] as String? ?? '',
+              subject: course['subject'] as String? ?? '',
+              uploadedAt: course['created_at'] as String? ?? DateTime.now().toIso8601String(),
+            )),
         ],
       ),
     );
@@ -774,14 +690,35 @@ class _CourseListTile extends StatelessWidget {
 class _ClassesTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final classrooms = context.watch<AppState>().userClassrooms;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          _buildClassCard(context, 'Terminale S — Biologie', 'Sciences · Secondaire · 28 élèves', AppColors.primary),
-          const SizedBox(height: 10),
-          _buildClassCard(context, '3ème — Mathématiques', 'Maths · Collège · 22 élèves', AppColors.green),
-          const SizedBox(height: 16),
+          if (classrooms.isEmpty)
+            Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white, borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.border, width: 0.5),
+              ),
+              child: Column(children: [
+                Icon(LucideIcons.users, size: 40, color: AppColors.textSub),
+                const SizedBox(height: 12),
+                Text('Aucune classe créée', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)),
+                const SizedBox(height: 4),
+                Text('Créez votre première classe pour commencer à enseigner.',
+                    style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSub), textAlign: TextAlign.center),
+              ]),
+            )
+          else
+            ...classrooms.map((c) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _buildClassCard(context, c.name,
+                  '${c.categoryDisplayName} · ${c.levelDisplayName} · ${c.totalStudents} élèves',
+                  AppColors.primary),
+            )),
           ElevatedButton.icon(
             onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateClassroomScreen())),
             icon: const Icon(LucideIcons.plus, size: 16),
@@ -1014,45 +951,9 @@ class _NotesTabState extends State<_NotesTab> {
   int _selectedClass = 0;
   int _selectedRoom = 0;
   
-  static const _classes = [
-    'Terminale S — Biologie',
-    '3ème — Mathématiques',
-    '2nde — Physique',
-    '1ère ES — Économie',
-  ];
-  
-  static const _rooms = {
-    0: ['QSM Biologie Chap 1', 'QSM Biologie Chap 2', 'Examen Final'],
-    1: ['QSM Maths Algèbre', 'QSM Maths Géométrie', 'Test Interrogation'],
-    2: ['QSM Physique Mécanique', 'QSM Physique Optique', 'TP Notation'],
-    3: ['QSM Éco Microéconomie', 'QSM Éco Macroéconomie', 'DS Final'],
-  };
-  
-  static const _students = {
-    0: [
-      ('Amira B.', 'AB', 85, 'QSM Biologie Chap 1', '18 min'),
-      ('Youssef M.', 'YM', 72, 'QSM Biologie Chap 1', '22 min'),
-      ('Sara K.', 'SK', 91, 'QSM Biologie Chap 2', '15 min'),
-      ('Leila M.', 'LM', 68, 'QSM Biologie Chap 1', '25 min'),
-      ('Karim A.', 'KA', 88, 'QSM Biologie Chap 2', '17 min'),
-    ],
-    1: [
-      ('Mohamed L.', 'ML', 76, 'QSM Maths Algèbre', '20 min'),
-      ('Fatima Z.', 'FZ', 83, 'QSM Maths Géométrie', '19 min'),
-      ('Omar K.', 'OK', 65, 'QSM Maths Algèbre', '24 min'),
-      ('Nadia H.', 'NH', 92, 'Test Interrogation', '16 min'),
-    ],
-    2: [
-      ('Samir R.', 'SR', 78, 'QSM Physique Mécanique', '21 min'),
-      ('Hajar M.', 'HM', 87, 'QSM Physique Optique', '18 min'),
-      ('Brahim A.', 'BA', 70, 'TP Notation', '23 min'),
-    ],
-    3: [
-      ('Imane B.', 'IB', 89, 'QSM Éco Microéconomie', '17 min'),
-      ('Yassine K.', 'YK', 75, 'QSM Éco Macroéconomie', '20 min'),
-      ('Sofia A.', 'SA', 94, 'DS Final', '14 min'),
-    ],
-  };
+  static const _classes = <String>[];
+  static const _rooms = <int, List<String>>{};
+  static const _students = <int, List<(String, String, int, String, String)>>{};
 
   double get _averageScore {
     final currentStudents = _students[_selectedClass] ?? [];
@@ -1073,6 +974,35 @@ class _NotesTabState extends State<_NotesTab> {
 
   @override
   Widget build(BuildContext context) {
+    if (_classes.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const SizedBox(height: 100),
+            Icon(LucideIcons.inbox, size: 48, color: AppColors.textSub.withOpacity(0.5)),
+            const SizedBox(height: 16),
+            Text(
+              'Aucune donnée disponible',
+              style: GoogleFonts.inter(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSub,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Les notes de vos étudiants apparaîtront ici.',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: AppColors.textSub.withOpacity(0.8),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     final currentStudents = _students[_selectedClass] ?? [];
     final currentRooms = _rooms[_selectedClass] ?? [];
     
@@ -1399,7 +1329,7 @@ class _MyCoursesTabState extends State<_MyCoursesTab> {
   int _selectedSubject = 0;
   
   static const _filieres = [
-    '2ème Année Baccalauréat',
+    'Tronc Commun',
     '1ère Année Baccalauréat',
   ];
   
@@ -1411,41 +1341,23 @@ class _MyCoursesTabState extends State<_MyCoursesTab> {
   ];
 
   List<Map<String, dynamic>> get _myCourses {
-    // Get courses uploaded by this teacher
-    final uploadedCourses = context.read<AppState>().uploadedLessons;
+    // Get courses uploaded by this teacher from Supabase
+    final uploadedCourses = context.read<AppState>().teacherCourses;
     final filiere = _filieres[_selectedFiliere];
     final subject = _myCoursesSubjects[_selectedSubject]['label'] as String;
     
-    // Cours par défaut avec l'image spécifiée
-    final defaultCourses = [
-      {
-        'title': 'Introduction aux Mathématiques',
-        'description': 'Cours d\'introduction aux concepts fondamentaux',
-        'fileName': 'math_intro.pdf',
-        'semester': 'Semestre 1',
-        'uploadedAt': DateTime.now().subtract(const Duration(days: 7)).toIso8601String(),
-        'filiere': filiere,
-        'subject': subject,
-        'isDefault': true,
-      },
-      {
-        'title': 'Physique - Mécanique Quantique',
-        'description': 'Les bases de la mécanique quantique et ses applications',
-        'fileName': 'quantum_physics.pdf',
-        'semester': 'Semestre 1',
-        'uploadedAt': DateTime.now().subtract(const Duration(days: 14)).toIso8601String(),
-        'filiere': filiere,
-        'subject': subject,
-        'isDefault': true,
-      },
-    ];
-    
-    // Combiner les cours uploadés et les cours par défaut
-    final filteredUploadedCourses = uploadedCourses
-        .where((course) => course['filiere'] == filiere && course['subject'] == subject)
+    // Filtre les cours de Supabase
+    return uploadedCourses
+        .where((course) => course['subject'] == subject)
+        .map((course) => {
+          ...course,
+          'fileName': course['file_name'] ?? 'Inconnu',
+          'semester': 'Semestre Actuel',
+          'uploadedAt': course['created_at'] ?? DateTime.now().toIso8601String(),
+          'filiere': filiere, // Fallback to current filiere since column is missing
+          'isDefault': false,
+        })
         .toList();
-    
-    return [...defaultCourses, ...filteredUploadedCourses];
   }
 
   @override
@@ -1459,12 +1371,20 @@ class _MyCoursesTabState extends State<_MyCoursesTab> {
         Padding(
           padding: const EdgeInsets.all(16),
           child: ElevatedButton.icon(
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const UploadScreen(),
-              ),
-            ),
+            onPressed: () {
+              final filiere = _filieres[_selectedFiliere];
+              final subject = _myCoursesSubjects[_selectedSubject]['label'] as String;
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => LessonUploadScreen(
+                    filiere: filiere,
+                    subject: subject,
+                    semester: 'Semestre Actuel',
+                  ),
+                ),
+              );
+            },
             icon: const Icon(LucideIcons.upload, size: 18),
             label: Text('Uploader cours', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
             style: ElevatedButton.styleFrom(
@@ -1578,11 +1498,11 @@ class _MyCoursesTabState extends State<_MyCoursesTab> {
             itemBuilder: (context, index) {
               final course = currentCourses[index];
               return _MyCourseCard(
-                title: course['title'] as String,
+                title: course['title'] as String? ?? 'Sans titre',
                 description: course['description'] as String? ?? '',
-                fileName: course['fileName'] as String,
-                semester: course['semester'] as String,
-                uploadedAt: course['uploadedAt'] as String,
+                fileName: course['fileName'] as String? ?? 'Inconnu',
+                semester: course['semester'] as String? ?? 'Semestre Inconnu',
+                uploadedAt: course['uploadedAt'] as String? ?? DateTime.now().toIso8601String(),
                 isDefault: course['isDefault'] as bool? ?? false,
               );
             },
@@ -1618,7 +1538,7 @@ class _MyCourseCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: isDefault ? AppColors.primary.withOpacity(0.5) : AppColors.border, width: isDefault ? 1.5 : 0.5),
+        border: Border.all(color: AppColors.primary.withOpacity(0.5), width: 1.5),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1632,35 +1552,29 @@ class _MyCourseCard extends StatelessWidget {
                 height: 60,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(8),
-                  color: isDefault ? AppColors.primary.withOpacity(0.1) : AppColors.background,
+                  color: AppColors.primary.withOpacity(0.1),
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: isDefault 
-                      ? Image.asset(
-                          'assets/images/image.png',
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Container(
-                              width: double.infinity,
-                              height: double.infinity,
-                              decoration: BoxDecoration(
-                                color: AppColors.primary.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Icon(
-                                LucideIcons.bookOpen,
-                                size: 24,
-                                color: AppColors.primary,
-                              ),
-                            );
-                          },
-                        )
-                      : const Icon(
-                          LucideIcons.fileText,
+                  child: Image.asset(
+                    'assets/images/image.png',
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        width: double.infinity,
+                        height: double.infinity,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          LucideIcons.bookOpen,
                           size: 24,
                           color: AppColors.primary,
                         ),
+                      );
+                    },
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1883,36 +1797,59 @@ class _LibraryTabState extends State<_LibraryTab> {
   };
 
   List<Map<String, dynamic>> get _currentSemesters {
-    final filiere = _filieres[_selectedFiliere];
     final subject = _subjects[_selectedSubject]['label'] as String;
-    final uploadedLessons = context.read<AppState>().uploadedLessons
-        .where((lesson) => lesson['filiere'] == filiere && lesson['subject'] == subject)
+    
+    // Mapper les matières de l'upload vers les catégories de la bibliothèque
+    List<String> mappedSubjects;
+    if (subject == 'SVT') {
+      mappedSubjects = ['Sciences Vie', 'SVT'];
+    } else if (subject == 'Physique-Chimie') {
+      mappedSubjects = ['Physique', 'Chimie', 'Physique-Chimie'];
+    } else {
+      mappedSubjects = [subject];
+    }
+    
+    // Récupérer les cours depuis Supabase
+    final uploadedLessons = context.read<AppState>().teacherCourses
+        .where((course) => mappedSubjects.contains(course['subject'] as String?))
         .toList();
     
-    final curriculum = _curriculum[filiere]?[subject] ?? [
-      {'title': 'Semestre 1', 'count': 10, 'lessons': <String>[]},
-      {'title': 'Semestre 2', 'count': 12, 'lessons': <String>[]},
+    // Filtrer par semestre
+    final s1Lessons = uploadedLessons
+        .where((course) => (course['description'] as String? ?? '').contains('Semestre 1'))
+        .map((lesson) => lesson['title'] as String? ?? 'Sans titre')
+        .toList();
+
+    final s2Lessons = uploadedLessons
+        .where((course) => (course['description'] as String? ?? '').contains('Semestre 2'))
+        .map((lesson) => lesson['title'] as String? ?? 'Sans titre')
+        .toList();
+
+    // Pour les cours qui n'ont pas de semestre défini ou différent
+    final otherLessons = uploadedLessons
+        .where((course) {
+          final desc = course['description'] as String? ?? '';
+          return !desc.contains('Semestre 1') && !desc.contains('Semestre 2');
+        })
+        .map((lesson) => lesson['title'] as String? ?? 'Sans titre')
+        .toList();
+        
+    s1Lessons.addAll(otherLessons); // Par défaut on les met dans le S1 s'ils n'ont pas de semestre
+      
+    return [
+      {
+        'title': 'Semestre 1',
+        'count': s1Lessons.length,
+        'lessons': s1Lessons,
+        'uploadedCount': s1Lessons.length,
+      },
+      {
+        'title': 'Semestre 2',
+        'count': s2Lessons.length,
+        'lessons': s2Lessons,
+        'uploadedCount': s2Lessons.length,
+      }
     ];
-    
-    return curriculum.map((s) {
-      final semesterLessons = uploadedLessons
-          .where((lesson) => lesson['semester'] == s['title'])
-          .map((lesson) => lesson['title'] as String)
-          .toList();
-      
-      final baseLessons = (s['lessons'] as List<String>).isEmpty 
-          ? ['Leçon 1', 'Leçon 2', 'Leçon 3', 'Leçon 4']
-          : s['lessons'] as List<String>;
-      
-      final allLessons = [...semesterLessons, ...baseLessons];
-      
-      return {
-        'title': s['title'] as String,
-        'count': (s['count'] as int) + semesterLessons.length,
-        'lessons': allLessons,
-        'uploadedCount': semesterLessons.length,
-      };
-    }).toList();
   }
 
   @override
@@ -2086,7 +2023,11 @@ class _LibraryTabState extends State<_LibraryTab> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => UploadScreen(),
+        builder: (_) => LessonUploadScreen(
+          filiere: 'Général',
+          subject: 'Général',
+          semester: semesterTitle,
+        ),
       ),
     );
   }
@@ -2192,15 +2133,20 @@ class _SemesterSection extends StatelessWidget {
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
+                        crossAxisCount: 3, // Changed from 2 to 3 to decrease width
                         mainAxisSpacing: 12,
                         crossAxisSpacing: 12,
-                        childAspectRatio: 1.0,
+                        childAspectRatio: 0.9, // Adjust height slightly for smaller cards
                       ),
                       itemCount: lessons.length,
                       itemBuilder: (context, i) {
                   final isUploaded = i < (semesterData?['uploadedCount'] ?? 0);
-                  return _LessonCard(title: lessons[i], isUploaded: isUploaded);
+                  final teacherName = context.read<AppState>().currentUser?.fullName ?? 'Moi';
+                  return _LessonCard(
+                    title: lessons[i], 
+                    isUploaded: isUploaded,
+                    teacherName: teacherName,
+                  );
                 },
                     ),
                   )
@@ -2216,7 +2162,8 @@ class _SemesterSection extends StatelessWidget {
 class _LessonCard extends StatelessWidget {
   final String title;
   final bool isUploaded;
-  const _LessonCard({required this.title, this.isUploaded = false});
+  final String? teacherName;
+  const _LessonCard({required this.title, this.isUploaded = false, this.teacherName});
 
   String _getLessonImage(String title) {
     // Use the specific image for all lessons
@@ -2229,82 +2176,51 @@ class _LessonCard extends StatelessWidget {
       onTap: () {/* View lesson details */},
       child: Container(
         decoration: BoxDecoration(
-          color: isUploaded ? AppColors.success.withOpacity(0.1) : const Color(0xFFF5F5F5),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(14),
-          border: isUploaded ? Border.all(color: AppColors.success, width: 1) : null,
+          border: Border.all(color: AppColors.border, width: 1), // Removed green border
         ),
         child: Column(
           children: [
-            // ── Upload badge ──────────────────────────────────
-            if (isUploaded)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.success,
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(14),
-                    topRight: Radius.circular(14),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(LucideIcons.checkCircle, size: 12, color: Colors.white),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Uploadé',
-                      style: GoogleFonts.inter(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
             // ── Image leçon ──────────────────────────────────
             Expanded(
               child: Padding(
-                padding: EdgeInsets.fromLTRB(8, isUploaded ? 6 : 10, 8, 0),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 4), // Increased padding to make image smaller
                 child: Container(
-                  decoration: BoxDecoration(
-                    color: isUploaded ? AppColors.success.withOpacity(0.2) : Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
+                  decoration: const BoxDecoration(
+                    color: Colors.transparent, // Removed green background
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: Image.asset(
                       _getLessonImage(title),
-                      fit: BoxFit.cover,
+                      fit: BoxFit.contain,
                       errorBuilder: (context, error, stackTrace) {
-                        print('Error loading image: $error');
                         return Container(
                           width: double.infinity,
                           height: double.infinity,
                           decoration: BoxDecoration(
-                            color: isUploaded ? AppColors.success.withOpacity(0.1) : AppColors.background,
+                            color: AppColors.success.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
-                              color: isUploaded ? AppColors.success : AppColors.border,
+                              color: AppColors.success,
                               width: 1,
                             ),
                           ),
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(
+                              const Icon(
                                 LucideIcons.image,
                                 size: 24,
-                                color: isUploaded ? AppColors.success : AppColors.textSub,
+                                color: AppColors.success,
                               ),
                               const SizedBox(height: 4),
                               Text(
                                 'Image',
                                 style: GoogleFonts.inter(
                                   fontSize: 10,
-                                  color: isUploaded ? AppColors.success : AppColors.textSub,
+                                  color: AppColors.success,
                                 ),
                               ),
                             ],
@@ -2317,26 +2233,37 @@ class _LessonCard extends StatelessWidget {
               ),
             ),
 
-            // ── Label titre ───────────────────────────────────────
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.all(8),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: isUploaded ? AppColors.success : const Color(0xFF1C1C1C),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                title,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.inter(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                  height: 1.3,
-                ),
+            // ── Titre et Enseignant ───────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              child: Column(
+                children: [
+                  Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.text,
+                    ),
+                  ),
+                  if (teacherName != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'Par $teacherName',
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textSub,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ],
