@@ -6,6 +6,12 @@ import '../theme/app_theme.dart';
 import '../models/user.dart';
 import '../services/app_state.dart';
 import 'admin_course_management.dart';
+import 'admin_structure_management.dart';
+import 'admin_parents_management.dart';
+import 'admin_classes_management.dart';
+import 'admin_create_class.dart';
+import 'admin_assign_teachers.dart';
+import 'admin_add_student.dart';
 import 'lesson_upload_screen.dart';
 import '../widgets/admin_users_table.dart';
 import '../widgets/admin_subscription_chart.dart';
@@ -24,6 +30,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
     SkwNavItem(icon: LucideIcons.layers, label: 'Dashboard'),
     SkwNavItem(icon: LucideIcons.users, label: 'Utilisateurs'),
     SkwNavItem(icon: LucideIcons.bookOpen, label: 'Bibliothèque'),
+    SkwNavItem(icon: LucideIcons.layout, label: 'Structure'),
+    SkwNavItem(icon: LucideIcons.heart, label: 'Parents'),
+    SkwNavItem(icon: LucideIcons.graduationCap, label: 'Classes'),
   ];
 
   @override
@@ -32,7 +41,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: SkwiltiTopNav(
-        title: ['Skwilti Admin', 'Utilisateurs', 'Bibliothèque'][_idx],
+        title: ['Skwilti Admin', 'Utilisateurs', 'Bibliothèque', 'Structure', 'Parents', 'Classes'][_idx],
         showLogo: true,
         showNotifications: true,
         onProfileTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileScreen())),
@@ -41,6 +50,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
         _StatsTab(),
         _UsersTab(),
         _CoursesTab(),
+        _StructureTab(),
+        _ParentsTab(),
+        _ClassesTab(),
       ]),
       bottomNavigationBar: SkwiltiBottomNav(currentIndex: _idx, onTap: (i) => setState(() => _idx = i), items: _nav),
     );
@@ -61,6 +73,11 @@ class _StatsTabState extends State<_StatsTab> {
       s.loadGlobalStats();
       s.loadAdminUsers();
       s.loadAdminCourses();
+      s.loadFilieres();
+      s.loadNiveaux();
+      s.loadMatieres();
+      s.loadAdminParents();
+      s.loadClassesScolaires();
     });
   }
 
@@ -1553,4 +1570,25 @@ class _Label extends StatelessWidget {
   const _Label(this.t);
   @override
   Widget build(BuildContext context) => Text(t, style: GoogleFonts.nunito(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text));
+}
+
+class _StructureTab extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return const AdminStructureManagementScreen();
+  }
+}
+
+class _ParentsTab extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return const AdminParentsManagementScreen();
+  }
+}
+
+class _ClassesTab extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return const AdminClassesManagementScreen();
+  }
 }

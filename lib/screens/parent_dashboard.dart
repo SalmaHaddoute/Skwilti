@@ -24,6 +24,7 @@ class _ParentDashboardState extends State<ParentDashboard> {
   static const _nav = [
     SkwNavItem(icon: LucideIcons.home, label: 'Accueil'),
     SkwNavItem(icon: LucideIcons.barChart2, label: 'Stats'),
+    SkwNavItem(icon: LucideIcons.userPlus, label: 'Lier'),
     SkwNavItem(icon: LucideIcons.messageSquare, label: 'Contact'),
   ];
 
@@ -33,7 +34,7 @@ class _ParentDashboardState extends State<ParentDashboard> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: SkwiltiTopNav(
-        title: _idx == 0 ? 'Skwilti' : _idx == 1 ? 'Statistiques' : 'Contact',
+        title: _idx == 0 ? 'Skwilti' : _idx == 1 ? 'Statistiques' : _idx == 2 ? 'Lier un enfant' : 'Contact',
         showLogo: _idx == 0,
         showNotifications: true,
         onProfileTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileScreen())),
@@ -41,6 +42,7 @@ class _ParentDashboardState extends State<ParentDashboard> {
       body: IndexedStack(index: _idx, children: [
         _HomeTab(user: user),
         _StatsTab(),
+        const _LinkChildTab(),
         _ContactTab(),
       ]),
       bottomNavigationBar: SkwiltiBottomNav(currentIndex: _idx, onTap: (i) => setState(() => _idx = i), items: _nav),
@@ -544,68 +546,729 @@ class _StatsTabState extends State<_StatsTab> {
   }
 }
 
-class _ContactTab extends StatelessWidget {
+class _ContactTab extends StatefulWidget {
+  @override
+  State<_ContactTab> createState() => _ContactTabState();
+}
+
+class _ContactTabState extends State<_ContactTab> {
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  bool _showAllTeachers = false;
+  List<Map<String, dynamic>> _allTeachers = [];
+  bool _loadingAll = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController.addListener(() {
+      setState(() => _searchQuery = _searchController.text.toLowerCase());
+    });
+  }
+
+  Future<void> _loadAllTeachers() async {
+    if (_allTeachers.isNotEmpty) return;
+    setState(() => _loadingAll = true);
+    final teachers = await context.read<AppState>().authService.fetchAllUsers(roleFilter: 'teacher');
+    if (mounted) {
+      setState(() {
+        _allTeachers = teachers;
+        _loadingAll = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final teachers = context.watch<AppState>().childTeachers;
-    final loaded   = context.watch<AppState>().childDataLoaded;
+    final appState = context.watch<AppState>();
+    final childTeachers = appState.childTeachers;
+    final childDataLoaded = appState.childDataLoaded;
+
+    final List<Map<String, dynamic>> displayedTeachers = _showAllTeachers 
+        ? _allTeachers 
+        : childTeachers.map((t) => {
+            'id': t['teacher_id'],
+            'first_name': t['teacher_name']?.split(' ').first ?? 'Enseignant',
+            'last_name': t['teacher_name']?.split(' ').skip(1).join(' ') ?? '',
+            'category': t['category'] ?? '',
+          }).toList();
+
+    final filteredTeachers = displayedTeachers.where((t) {
+      final name = '${t['first_name'] ?? ''} ${t['last_name'] ?? ''}'.toLowerCase();
+      final category = (t['category'] ?? '').toString().toLowerCase();
+      return name.contains(_searchQuery) || category.contains(_searchQuery);
+    }).toList();
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Search Bar
         Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: AppColors.infoLight, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.info.withOpacity(0.2))),
-          child: Row(children: [
-            const Icon(LucideIcons.info, size: 16, color: AppColors.info),
-            const SizedBox(width: 8),
-            Expanded(child: Text('Contactez les enseignants directement depuis l\'app.',
-              style: GoogleFonts.nunito(fontSize: 12, color: AppColors.info, fontWeight: FontWeight.w600))),
-          ]),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
+          ),
+          child: TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: 'Rechercher un enseignant ou une matière...',
+              hintStyle: GoogleFonts.inter(color: AppColors.textSub, fontSize: 14),
+              prefixIcon: const Icon(LucideIcons.search, size: 20, color: AppColors.primary),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            ),
+          ),
         ),
         const SizedBox(height: 16),
-        _SectionLabel('Enseignants'),
-        const SizedBox(height: 10),
-        if (!loaded)
-          const Center(child: CircularProgressIndicator())
-        else if (teachers.isEmpty)
+
+        // Filters
+        Row(
+          children: [
+            _FilterChip(
+              label: "Profs de l'enfant",
+              isSelected: !_showAllTeachers,
+              onTap: () => setState(() => _showAllTeachers = false),
+            ),
+            const SizedBox(width: 8),
+            _FilterChip(
+              label: "Tous les enseignants",
+              isSelected: _showAllTeachers,
+              onTap: () {
+                setState(() => _showAllTeachers = true);
+                _loadAllTeachers();
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+
+        _SectionLabel(_showAllTeachers ? 'Annuaire des enseignants' : 'Enseignants de l\'enfant'),
+        const SizedBox(height: 12),
+
+        if (_showAllTeachers && _loadingAll)
+          const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator()))
+        else if (!_showAllTeachers && !childDataLoaded)
+          const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator()))
+        else if (filteredTeachers.isEmpty)
           Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border, width: 0.5)),
+            width: double.infinity,
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.border.withOpacity(0.5))),
             child: Column(children: [
-              Icon(LucideIcons.users, size: 36, color: AppColors.textSub),
-              const SizedBox(height: 8),
-              Text('Aucun enseignant trouvé', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSub)),
+              Icon(LucideIcons.users, size: 48, color: AppColors.textSub.withOpacity(0.3)),
+              const SizedBox(height: 16),
+              Text('Aucun enseignant trouvé', style: GoogleFonts.inter(fontSize: 15, color: AppColors.textSub, fontWeight: FontWeight.w600)),
+              Text('Essayez une autre recherche', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSub.withOpacity(0.7))),
             ]),
           )
         else
-          ...teachers.map((t) {
-            final name    = t['teacher_name'] as String? ?? 'Enseignant';
-            final subject = t['category'] as String? ?? '';
+          ...filteredTeachers.map((t) {
+            final name = '${t['first_name'] ?? ''} ${t['last_name'] ?? ''}'.trim();
+            final category = t['category'] ?? 'Enseignant';
+            
             return Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border, width: 0.5)),
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.border.withOpacity(0.5)),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4, offset: const Offset(0, 2))],
+              ),
               child: Row(children: [
-                Container(width: 44, height: 44,
-                  decoration: BoxDecoration(color: AppColors.primaryLight, borderRadius: BorderRadius.circular(12)),
-                  child: const Icon(LucideIcons.graduationCap, size: 22, color: AppColors.primary)),
-                const SizedBox(width: 12),
+                Container(
+                  width: 48, height: 48,
+                  decoration: BoxDecoration(color: AppColors.primaryLight, borderRadius: BorderRadius.circular(14)),
+                  child: const Icon(LucideIcons.graduationCap, size: 24, color: AppColors.primary),
+                ),
+                const SizedBox(width: 14),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(name, style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)),
-                  Text(subject, style: GoogleFonts.nunito(fontSize: 11, color: AppColors.textSub)),
+                  Text(name.isEmpty ? 'Enseignant' : name, style: GoogleFonts.nunito(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)),
+                  Text(category, style: GoogleFonts.nunito(fontSize: 12, color: AppColors.textSub, fontWeight: FontWeight.w600)),
                 ])),
                 GestureDetector(
                   onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => ConversationScreen(teacherName: name, subject: subject, teacherIcon: LucideIcons.messageSquare))),
+                    builder: (_) => ConversationScreen(
+                      teacherName: name.isEmpty ? 'Enseignant' : name,
+                      subject: category,
+                      teacherIcon: LucideIcons.messageSquare,
+                    ),
+                  )),
                   child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(color: AppColors.primaryLight, borderRadius: BorderRadius.circular(10)),
-                    child: const Icon(LucideIcons.messageSquare, size: 18, color: AppColors.primary)),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(color: AppColors.primaryLight, borderRadius: BorderRadius.circular(12)),
+                    child: const Icon(LucideIcons.messageSquare, size: 20, color: AppColors.primary),
+                  ),
                 ),
               ]),
             );
           }),
       ]),
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _FilterChip({required this.label, required this.isSelected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: isSelected ? AppColors.primary : AppColors.border),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+            color: isSelected ? Colors.white : AppColors.textSub,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+class _LinkChildTab extends StatefulWidget {
+  const _LinkChildTab();
+  @override
+  State<_LinkChildTab> createState() => _LinkChildTabState();
+}
+
+class _LinkChildTabState extends State<_LinkChildTab> {
+  String? _selectedFiliereId;
+  String? _selectedNiveauId;
+  String _alphabetFilter = '';
+  List<Map<String, dynamic>> _students = [];
+  List<Map<String, dynamic>> _filteredStudents = [];
+  List<Map<String, dynamic>> _filieres = [];
+  List<Map<String, dynamic>> _niveaux = [];
+  bool _isLoading = true;
+  bool _isLinking = false;
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+    _searchController.addListener(_applyFilters);
+  }
+
+  @override
+  void dispose() {
+    _searchController.removeListener(_applyFilters);
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+    try {
+      final appState = context.read<AppState>();
+      await appState.loadFilieres();
+      await appState.loadNiveaux();
+      final students = await appState.authService.fetchAllStudents();
+      setState(() {
+        _filieres = appState.filieres;
+        _niveaux = appState.niveaux;
+        _students = students;
+        _filteredStudents = students;
+      });
+    } catch (e) {
+      print('🔴 Error loading data: $e');
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  void _applyFilters() {
+    final searchQuery = _searchController.text.toLowerCase();
+    setState(() {
+      _filteredStudents = _students.where((s) {
+        final filiereMatch = _selectedFiliereId == null ||
+            s['filiere_id']?.toString() == _selectedFiliereId;
+        final niveauMatch = _selectedNiveauId == null ||
+            s['niveau_id']?.toString() == _selectedNiveauId;
+        
+        final firstName = (s['first_name'] ?? '').toString().toLowerCase();
+        final lastName = (s['last_name'] ?? '').toString().toLowerCase();
+        final email = (s['email'] ?? '').toString().toLowerCase();
+        final codeMassar = (s['code_massar'] ?? '').toString().toLowerCase();
+        
+        final nameMatch = searchQuery.isEmpty ||
+            firstName.contains(searchQuery) ||
+            lastName.contains(searchQuery) ||
+            email.contains(searchQuery) ||
+            codeMassar.contains(searchQuery);
+
+        final alphabetMatch = _alphabetFilter.isEmpty ||
+            firstName.startsWith(_alphabetFilter.toLowerCase()) ||
+            lastName.startsWith(_alphabetFilter.toLowerCase());
+
+        return filiereMatch && niveauMatch && nameMatch && alphabetMatch;
+      }).toList();
+    });
+  }
+
+  Future<void> _onFiliereChanged(String? value) async {
+    setState(() => _selectedFiliereId = value);
+    if (value != null) {
+      final niveaux = await context.read<AppState>().authService.fetchNiveauxByFiliere(value);
+      setState(() => _niveaux = niveaux);
+    }
+    _applyFilters();
+  }
+
+  Future<void> _linkChild(String childId) async {
+    final parentId = context.read<AppState>().currentUser?.id;
+    if (parentId == null) return;
+
+    setState(() => _isLinking = true);
+    try {
+      await context.read<AppState>().linkParentEnfant(parentId, childId);
+      if (mounted) {
+        // Update local state for immediate feedback
+        setState(() {
+          for (var s in _students) {
+            if (s['id'].toString() == childId) {
+              final ids = s['linked_parent_ids'] != null ? List.from(s['linked_parent_ids']) : [];
+              if (!ids.contains(parentId)) ids.add(parentId);
+              s['linked_parent_ids'] = ids;
+            }
+          }
+          _applyFilters();
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Enfant lié avec succès!'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        await context.read<AppState>().loadChildData();
+      }
+
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      setState(() => _isLinking = false);
+    }
+  }
+
+  Future<void> _unlinkChild(String childId) async {
+    final parentId = context.read<AppState>().currentUser?.id;
+    if (parentId == null) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Délier l\'étudiant', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+        content: const Text('Voulez-vous vraiment délier cet étudiant de votre compte ?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+            child: const Text('Délier', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _isLinking = true);
+    try {
+      await context.read<AppState>().authService.unlinkParentEnfant(parentId, childId);
+      if (mounted) {
+        // Update local state for immediate feedback
+        setState(() {
+          for (var s in _students) {
+            if (s['id'].toString() == childId) {
+              final ids = s['linked_parent_ids'] != null ? List.from(s['linked_parent_ids']) : [];
+              ids.remove(parentId);
+              s['linked_parent_ids'] = ids;
+            }
+          }
+          _applyFilters();
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Étudiant délié avec succès!'),
+            backgroundColor: AppColors.warning,
+          ),
+        );
+        await context.read<AppState>().loadChildData();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLinking = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+            ),
+            child: Row(
+              children: [
+                Icon(LucideIcons.info, color: AppColors.primary, size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Sélectionnez un étudiant à lier à votre compte parent.',
+                    style: GoogleFonts.inter(fontSize: 13, color: AppColors.text),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Search Bar
+          Text(
+            'Recherche',
+            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _searchController,
+            onChanged: (_) => _applyFilters(),
+            decoration: InputDecoration(
+              hintText: 'Rechercher par nom, email ou code Massar...',
+              hintStyle: GoogleFonts.inter(fontSize: 13, color: AppColors.textSub),
+              prefixIcon: const Icon(LucideIcons.search, size: 18, color: AppColors.primary),
+              suffixIcon: _searchController.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(LucideIcons.x, size: 16),
+                      onPressed: () {
+                        _searchController.clear();
+                        _applyFilters();
+                      },
+                    )
+                  : null,
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.border, width: 0.5),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.border, width: 0.5),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.primary, width: 1),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Filters
+          Text(
+            'Filtres',
+            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text),
+          ),
+
+          const SizedBox(height: 12),
+
+          // Filière Dropdown
+          DropdownButtonFormField<String>(
+            value: _selectedFiliereId,
+            decoration: InputDecoration(
+              labelText: 'Filière',
+              labelStyle: GoogleFonts.nunito(fontSize: 12, color: AppColors.textSub),
+              prefixIcon: const Icon(LucideIcons.graduationCap, color: AppColors.primary, size: 20),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            ),
+            items: [
+              const DropdownMenuItem(value: null, child: Text('Toutes les filières')),
+              ..._filieres.map((f) => DropdownMenuItem(
+                value: f['id'].toString(),
+                child: Text(f['nom']?.toString() ?? 'Sans nom', style: GoogleFonts.nunito(fontSize: 14)),
+              )),
+            ],
+            onChanged: _onFiliereChanged,
+          ),
+          const SizedBox(height: 12),
+
+          // Niveau Dropdown
+          DropdownButtonFormField<String>(
+            value: _selectedNiveauId,
+            decoration: InputDecoration(
+              labelText: 'Niveau',
+              labelStyle: GoogleFonts.nunito(fontSize: 12, color: AppColors.textSub),
+              prefixIcon: const Icon(LucideIcons.barChart2, color: AppColors.primary, size: 20),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            ),
+            items: [
+              const DropdownMenuItem(value: null, child: Text('Tous les niveaux')),
+              ..._niveaux.map((n) => DropdownMenuItem(
+                value: n['id'].toString(),
+                child: Text(n['nom']?.toString() ?? 'Sans nom', style: GoogleFonts.nunito(fontSize: 14)),
+              )),
+            ],
+            onChanged: (value) {
+              setState(() => _selectedNiveauId = value);
+              _applyFilters();
+            },
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Filtrer par lettre',
+            style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSub),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 40,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: 27, // All + A-Z
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final letters = ['', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')];
+                final letter = letters[index];
+                final isSelected = _alphabetFilter == letter;
+                return GestureDetector(
+                  onTap: () {
+                    setState(() => _alphabetFilter = letter);
+                    _applyFilters();
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: letter.isEmpty ? 60 : 40,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: isSelected ? AppColors.primary : Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: isSelected ? AppColors.primary : AppColors.border,
+                        width: 1,
+                      ),
+                      boxShadow: isSelected
+                          ? [BoxShadow(color: AppColors.primary.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))]
+                          : [],
+                    ),
+                    child: Text(
+                      letter.isEmpty ? 'Tous' : letter,
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                        color: isSelected ? Colors.white : AppColors.text,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // Results count
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '${_filteredStudents.length} étudiants trouvés',
+                style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text),
+              ),
+              if (_isLoading)
+                const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Student List
+          if (_isLoading)
+            const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
+          else if (_filteredStudents.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(32),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Column(
+                children: [
+                  Icon(LucideIcons.searchX, size: 48, color: AppColors.textSub),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Aucun étudiant trouvé',
+                    style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Essayez d\'autres filtres',
+                    style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSub),
+                  ),
+                ],
+              ),
+            )
+          else
+            ..._filteredStudents.map((student) {
+              final name = '${student['first_name'] ?? ''} ${student['last_name'] ?? ''}'.trim();
+              final email = student['email']?.toString() ?? '';
+              final codeMassar = student['code_massar']?.toString() ?? '';
+              final isLinked = student['linked_parent_ids'] != null &&
+                  (student['linked_parent_ids'] as List).contains(context.read<AppState>().currentUser?.id);
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: isLinked ? AppColors.success : AppColors.border),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 2))],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: isLinked ? AppColors.success.withOpacity(0.1) : AppColors.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        isLinked ? LucideIcons.userCheck : LucideIcons.user,
+                        color: isLinked ? AppColors.success : AppColors.primary,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            name,
+                            style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Code Massar: $codeMassar',
+                            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSub),
+                          ),
+                          Text(
+                            email,
+                            style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSub.withOpacity(0.7)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (isLinked)
+                      Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: AppColors.success.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'Lié',
+                              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.success),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextButton.icon(
+                            onPressed: _isLinking ? null : () => _unlinkChild(student['id'].toString()),
+                            icon: const Icon(LucideIcons.link2Off, size: 14, color: AppColors.error),
+                            label: Text('Délier', style: GoogleFonts.inter(fontSize: 11, color: AppColors.error, fontWeight: FontWeight.w600)),
+                            style: TextButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                          ),
+                        ],
+                      )
+                    else
+                      ElevatedButton.icon(
+                        onPressed: _isLinking ? null : () async {
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: Text('Lier l\'étudiant', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+                              content: Text('Voulez-vous lier $name à votre compte parent ?'),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+                                ElevatedButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+                                  child: const Text('Lier', style: TextStyle(color: Colors.white)),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirm == true) {
+                            _linkChild(student['id'].toString());
+                          }
+                        },
+                        icon: _isLinking
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Icon(LucideIcons.link, size: 16),
+                        label: Text('Lier', style: GoogleFonts.inter(fontSize: 13)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            }),
+        ],
+      ),
     );
   }
 }

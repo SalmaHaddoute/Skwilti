@@ -72,21 +72,30 @@ lib/
   - Affichage des abonnements (Freemium/Premium)
   - Navigation par onglets
 
-### 3. Dashboard Étudiant (`student_dashboard.dart`)
+### 3. Suivre un Étudiant (`admin_parents_management.dart`)
+- **Fonctionnalités** :
+  - Affichage des parents avec enfants liés
+  - Filtres par filière, niveau et type d'abonnement (données depuis Supabase)
+  - Bouton "Suivre l'enfant" pour permettre à l'admin de suivre un étudiant
+  - Dialogue de confirmation avec informations de l'enfant (nom, filière, niveau)
+  - Affichage du type d'abonnement (FREE/PREMIUM)
+  - Interface responsive avec correction des overflow dans les dropdowns
+
+### 4. Dashboard Étudiant (`student_dashboard.dart`)
 - **Fonctionnalités** :
   - Accès aux QCM
   - Suivi de progression
   - Statistiques personnelles
   - Accès aux classes
 
-### 4. Écran d'upload (`upload_screen.dart`)
+### 5. Écran d'upload (`upload_screen.dart`)
 - **Fonctionnalités** :
   - Upload de documents PDF
   - Génération automatique de QCM
   - Configuration des questions
   - Prévisualisation avant génération
 
-### 5. Bibliothèque (`library_screen.dart`)
+### 6. Bibliothèque (`library_screen.dart`)
 - **Fonctionnalités** :
   - Organisation par filière/matière
   - Accès aux cours et leçons
@@ -280,4 +289,4 @@ flutter build web --release
 
 ---
 
-*Document mis à jour le 5 Mai 2026*
+*Document mis à jour le 11 Mai 2026*

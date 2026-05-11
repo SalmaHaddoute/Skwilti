@@ -165,18 +165,23 @@ class _ProfileChip extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Flexible(
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 80),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(user.firstName, style: GoogleFonts.inter(fontSize: 7, fontWeight: FontWeight.w700, color: AppColors.text)),
-              Text(_roleLabel, style: GoogleFonts.inter(fontSize: 5, color: AppColors.textSub)),
+              Text(user.firstName,
+                style: GoogleFonts.inter(fontSize: 7, fontWeight: FontWeight.w700, color: AppColors.text),
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+              Text(_roleLabel,
+                style: GoogleFonts.inter(fontSize: 5, color: AppColors.textSub),
+                maxLines: 1, overflow: TextOverflow.ellipsis),
             ],
           ),
         ),
-        const SizedBox(width: 1),
+        const SizedBox(width: 4),
         Container(
           width: 22, height: 22,
           decoration: BoxDecoration(

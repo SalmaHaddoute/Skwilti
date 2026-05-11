@@ -5,7 +5,6 @@ import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../services/app_state.dart';
 import '../models/classroom.dart';
-import '../widgets/common_widgets.dart';
 
 class CreateClassroomScreen extends StatefulWidget {
   const CreateClassroomScreen({super.key});
@@ -18,10 +17,27 @@ class _CreateClassroomScreenState extends State<CreateClassroomScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
-  
-  CourseCategory _selectedCategory = CourseCategory.maths;
-  CourseLevel _selectedLevel = CourseLevel.middleSchool;
+
+  // Dropdown selections
+  String? _selectedFiliereId;
+  String? _selectedNiveauId;
+  String? _selectedMatiereId;
+  String? _selectedClasseScolaireId;
+
+  // Lists for dropdowns
+  List<Map<String, dynamic>> _filieres = [];
+  List<Map<String, dynamic>> _niveaux = [];
+  List<Map<String, dynamic>> _matieres = [];
+  List<Map<String, dynamic>> _classesScolaires = [];
+
   bool _isLoading = false;
+  bool _isLoadingData = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInitialData();
+  }
 
   @override
   void dispose() {
@@ -30,29 +46,103 @@ class _CreateClassroomScreenState extends State<CreateClassroomScreen> {
     super.dispose();
   }
 
+  Future<void> _loadInitialData() async {
+    setState(() => _isLoadingData = true);
+    try {
+      await context.read<AppState>().loadFilieres();
+      await context.read<AppState>().loadMatieres();
+      setState(() {
+        _filieres = context.read<AppState>().filieres;
+        _matieres = context.read<AppState>().matieres;
+      });
+    } catch (e) {
+      print('⚠️ Error loading initial data: $e');
+    } finally {
+      setState(() => _isLoadingData = false);
+    }
+  }
+
+  Future<void> _onFiliereChanged(String? filiereId) async {
+    setState(() {
+      _selectedFiliereId = filiereId;
+      _selectedNiveauId = null;
+      _selectedClasseScolaireId = null;
+      _niveaux = [];
+      _classesScolaires = [];
+    });
+
+    if (filiereId != null) {
+      try {
+        final niveaux = await context.read<AppState>().authService.fetchNiveauxByFiliere(filiereId);
+        setState(() {
+          _niveaux = niveaux;
+        });
+      } catch (e) {
+        print('⚠️ Error loading niveaux: $e');
+      }
+    }
+  }
+
+  Future<void> _onNiveauChanged(String? niveauId) async {
+    setState(() {
+      _selectedNiveauId = niveauId;
+      _selectedClasseScolaireId = null;
+      _classesScolaires = [];
+    });
+
+    if (_selectedFiliereId != null && niveauId != null) {
+      try {
+        await context.read<AppState>().loadClassesScolaires();
+        final allClasses = context.read<AppState>().classesScolaires;
+        setState(() {
+          _classesScolaires = allClasses.where((c) =>
+            c['filiere_id'].toString() == _selectedFiliereId &&
+            c['niveau_id'].toString() == niveauId
+          ).toList();
+        });
+      } catch (e) {
+        print('⚠️ Error loading classes scolaires: $e');
+      }
+    }
+  }
+
   Future<void> _createClassroom() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_selectedFiliereId == null || _selectedNiveauId == null ||
+        _selectedMatiereId == null || _selectedClasseScolaireId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Veuillez sélectionner tous les champs obligatoires'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
 
     setState(() => _isLoading = true);
 
     try {
-      await context.read<AppState>().createClassroom(
+      // Create classroom with all the selected data
+      final classroom = await context.read<AppState>().createClassroomWithSchoolClass(
         name: _nameController.text.trim(),
-        description: _descriptionController.text.trim().isEmpty 
-            ? null 
+        description: _descriptionController.text.trim().isEmpty
+            ? null
             : _descriptionController.text.trim(),
-        category: _selectedCategory,
-        level: _selectedLevel,
+        filiereId: _selectedFiliereId!,
+        niveauId: _selectedNiveauId!,
+        matiereId: _selectedMatiereId!,
+        classeScolaireId: _selectedClasseScolaireId!,
       );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Classe créée avec succès!'),
+            content: Text('Classe créée avec succès! Les étudiants ont été importés automatiquement.'),
             backgroundColor: AppColors.success,
+            duration: Duration(seconds: 4),
           ),
         );
-        Navigator.pop(context);
+        Navigator.pop(context, classroom);
       }
     } catch (e) {
       if (mounted) {
@@ -80,7 +170,7 @@ class _CreateClassroomScreenState extends State<CreateClassroomScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          'Créer une classe',
+          'Nouvelle Classroom',
           style: GoogleFonts.inter(
             fontSize: 18,
             fontWeight: FontWeight.w700,
@@ -88,459 +178,340 @@ class _CreateClassroomScreenState extends State<CreateClassroomScreen> {
           ),
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Classroom info
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.border, width: 0.5),
-                ),
+      body: _isLoadingData
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Form(
+                key: _formKey,
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
-                      'Informations de la classe',
-                      style: GoogleFonts.inter(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.text,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    
-                    // Name
-                    TextFormField(
-                      controller: _nameController,
-                      style: GoogleFonts.nunito(fontSize: 14),
-                      decoration: InputDecoration(
-                        labelText: 'Nom de la classe *',
-                        labelStyle: GoogleFonts.nunito(fontSize: 12, color: AppColors.textSub),
-                        prefixIcon: const Icon(LucideIcons.tag, color: AppColors.primary, size: 20),
-                        hintText: 'Ex: Mathématiques 3ème',
-                        hintStyle: GoogleFonts.nunito(fontSize: 13, color: AppColors.textSub),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: AppColors.border),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: AppColors.primary),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Veuillez entrer le nom de la classe';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    
-                    // Description
-                    TextFormField(
-                      controller: _descriptionController,
-                      style: GoogleFonts.nunito(fontSize: 14),
-                      decoration: InputDecoration(
-                        labelText: 'Description (optionnel)',
-                        labelStyle: GoogleFonts.nunito(fontSize: 12, color: AppColors.textSub),
-                        prefixIcon: const Icon(LucideIcons.fileText, color: AppColors.primary, size: 20),
-                        hintText: 'Description détaillée de la classe...',
-                        hintStyle: GoogleFonts.nunito(fontSize: 13, color: AppColors.textSub),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: AppColors.border),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: AppColors.primary),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                      ),
-                      maxLines: 3,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // Category selection
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.border, width: 0.5),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Catégorie',
-                      style: GoogleFonts.inter(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.text,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: CourseCategory.values.map((category) {
-                        final isSelected = _selectedCategory == category;
-                        return GestureDetector(
-                          onTap: () {
-                            setState(() => _selectedCategory = category);
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: isSelected ? AppColors.primary : AppColors.background,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: isSelected ? AppColors.primary : AppColors.border,
-                              ),
-                            ),
-                            child: Text(
-                              _getCategoryDisplayName(category),
-                              style: GoogleFonts.nunito(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: isSelected ? Colors.white : AppColors.text,
-                              ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // Level selection
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.border),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.warning.withOpacity(0.1),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [AppColors.warning, AppColors.warning.withOpacity(0.8)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(
-                            LucideIcons.barChart2,
-                            color: Colors.white,
-                            size: 16,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          'Niveau',
-                          style: GoogleFonts.nunito(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.text,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: CourseLevel.values.map((level) {
-                        final isSelected = _selectedLevel == level;
-                        return GestureDetector(
-                          onTap: () {
-                            setState(() => _selectedLevel = level);
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: isSelected ? AppColors.primary : AppColors.background,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: isSelected ? AppColors.primary : AppColors.border,
-                              ),
-                            ),
-                            child: Text(
-                              _getLevelDisplayName(level),
-                              style: GoogleFonts.nunito(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: isSelected ? Colors.white : AppColors.text,
-                              ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 32),
-
-              // Preview
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.border),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.info.withOpacity(0.1),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [AppColors.info, AppColors.info.withOpacity(0.8)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(
-                            LucideIcons.eye,
-                            color: Colors.white,
-                            size: 16,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          'Aperçu',
-                          style: GoogleFonts.nunito(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.text,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
+                    // Classroom info
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: AppColors.background,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.border),
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.border, width: 0.5),
                       ),
-                      child: Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Container(
-                            width: 48,
-                            height: 48,
-                            decoration: BoxDecoration(
-                              color: AppColors.primary,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Icon(
-                              LucideIcons.bookOpen,
-                              color: Colors.white,
-                              size: 24,
+                          Text(
+                            'Informations de la classe',
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.text,
                             ),
                           ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
+                          const SizedBox(height: 16),
+
+                          // Name
+                          TextFormField(
+                            controller: _nameController,
+                            style: GoogleFonts.nunito(fontSize: 14),
+                            decoration: InputDecoration(
+                              labelText: 'Nom de la classe *',
+                              labelStyle: GoogleFonts.nunito(fontSize: 12, color: AppColors.textSub),
+                              prefixIcon: const Icon(LucideIcons.tag, color: AppColors.primary, size: 20),
+                              hintText: 'Ex: Mathématiques 3ème Année',
+                              hintStyle: GoogleFonts.nunito(fontSize: 13, color: AppColors.textSub),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(color: AppColors.border),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(color: AppColors.primary),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                            ),
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
+                                return 'Veuillez entrer le nom de la classe';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Description
+                          TextFormField(
+                            controller: _descriptionController,
+                            style: GoogleFonts.nunito(fontSize: 14),
+                            decoration: InputDecoration(
+                              labelText: 'Description (optionnel)',
+                              labelStyle: GoogleFonts.nunito(fontSize: 12, color: AppColors.textSub),
+                              prefixIcon: const Icon(LucideIcons.fileText, color: AppColors.primary, size: 20),
+                              hintText: 'Description détaillée de la classe...',
+                              hintStyle: GoogleFonts.nunito(fontSize: 13, color: AppColors.textSub),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(color: AppColors.border),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(color: AppColors.primary),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                            ),
+                            maxLines: 3,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // School Structure Selection
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.border, width: 0.5),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Structure Scolaire',
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.text,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Filière Dropdown
+                          DropdownButtonFormField<String>(
+                            value: _selectedFiliereId,
+                            decoration: InputDecoration(
+                              labelText: 'Filière *',
+                              labelStyle: GoogleFonts.nunito(fontSize: 12, color: AppColors.textSub),
+                              prefixIcon: const Icon(LucideIcons.graduationCap, color: AppColors.primary, size: 20),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(color: AppColors.border),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(color: AppColors.primary),
+                              ),
+                            ),
+                            items: _filieres.map((filiere) {
+                              return DropdownMenuItem<String>(
+                                value: filiere['id'].toString(),
+                                child: Text(
+                                  filiere['nom']?.toString() ?? 'Sans nom',
+                                  style: GoogleFonts.nunito(fontSize: 14),
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: _onFiliereChanged,
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Veuillez sélectionner une filière';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Niveau Dropdown
+                          DropdownButtonFormField<String>(
+                            value: _selectedNiveauId,
+                            decoration: InputDecoration(
+                              labelText: 'Niveau *',
+                              labelStyle: GoogleFonts.nunito(fontSize: 12, color: AppColors.textSub),
+                              prefixIcon: const Icon(LucideIcons.barChart2, color: AppColors.primary, size: 20),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(color: AppColors.border),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(color: AppColors.primary),
+                              ),
+                            ),
+                            items: _niveaux.map((niveau) {
+                              return DropdownMenuItem<String>(
+                                value: niveau['id'].toString(),
+                                child: Text(
+                                  niveau['nom']?.toString() ?? 'Sans nom',
+                                  style: GoogleFonts.nunito(fontSize: 14),
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: _onNiveauChanged,
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Veuillez sélectionner un niveau';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Matière Dropdown
+                          DropdownButtonFormField<String>(
+                            value: _selectedMatiereId,
+                            decoration: InputDecoration(
+                              labelText: 'Matière *',
+                              labelStyle: GoogleFonts.nunito(fontSize: 12, color: AppColors.textSub),
+                              prefixIcon: const Icon(LucideIcons.bookOpen, color: AppColors.primary, size: 20),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(color: AppColors.border),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(color: AppColors.primary),
+                              ),
+                            ),
+                            items: _matieres.map((matiere) {
+                              return DropdownMenuItem<String>(
+                                value: matiere['id'].toString(),
+                                child: Text(
+                                  matiere['nom']?.toString() ?? 'Sans nom',
+                                  style: GoogleFonts.nunito(fontSize: 14),
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedMatiereId = value;
+                              });
+                            },
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Veuillez sélectionner une matière';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Classe Scolaire Dropdown
+                          DropdownButtonFormField<String>(
+                            value: _selectedClasseScolaireId,
+                            decoration: InputDecoration(
+                              labelText: 'Choisir une Classe Scolaire *',
+                              labelStyle: GoogleFonts.nunito(fontSize: 12, color: AppColors.textSub),
+                              prefixIcon: const Icon(LucideIcons.users, color: AppColors.primary, size: 20),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(color: AppColors.border),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(color: AppColors.primary),
+                              ),
+                            ),
+                            items: _classesScolaires.map((classe) {
+                              final nom = classe['nom']?.toString() ?? 'Sans nom';
+                              final annee = classe['annee_scolaire']?.toString() ?? '';
+                              final effectif = classe['effectif']?.toString() ?? '0';
+                              return DropdownMenuItem<String>(
+                                value: classe['id'].toString(),
+                                child: Text(
+                                  '$nom ($annee) - $effectif étudiants',
+                                  style: GoogleFonts.nunito(fontSize: 14),
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedClasseScolaireId = value;
+                              });
+                            },
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Veuillez sélectionner une classe scolaire';
+                              }
+                              return null;
+                            },
+                          ),
+                          if (_selectedClasseScolaireId != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Text(
+                                'Les étudiants seront importés automatiquement',
+                                style: GoogleFonts.nunito(
+                                  fontSize: 12,
+                                  color: AppColors.success,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+
+                    // Submit button
+                    Container(
+                      width: double.infinity,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [AppColors.success, AppColors.success.withOpacity(0.8)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.success.withOpacity(0.3),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: _isLoading ? null : _createClassroom,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              if (_isLoading)
+                                const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                  ),
+                                )
+                              else ...[
+                                const Icon(
+                                  LucideIcons.plus,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
                                 Text(
-                                  _nameController.text.isEmpty ? 'Nom de la classe' : _nameController.text,
+                                  'Créer la classe',
                                   style: GoogleFonts.nunito(
                                     fontSize: 14,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.text,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
                                   ),
                                 ),
-                                const SizedBox(height: 4),
-                                Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.primary.withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Text(
-                                        _getCategoryDisplayName(_selectedCategory),
-                                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                          color: AppColors.primary,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.orange.withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Text(
-                                        _getLevelDisplayName(_selectedLevel),
-                                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                          color: AppColors.orange,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
                               ],
-                            ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 32),
-
-              // Submit button
-              Container(
-                width: double.infinity,
-                height: 48,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [AppColors.success, AppColors.success.withOpacity(0.8)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(8),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.success.withOpacity(0.3),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: _isLoading ? null : _createClassroom,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        if (_isLoading)
-                          const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                            ),
-                          )
-                        else ...[
-                          const Icon(
-                            LucideIcons.plus,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Créer la classe',
-                            style: GoogleFonts.nunito(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+            ),
     );
-  }
-
-  String _getCategoryDisplayName(CourseCategory category) {
-    switch (category) {
-      case CourseCategory.maths:
-        return 'Maths';
-      case CourseCategory.physics:
-        return 'Physique';
-      case CourseCategory.chemistry:
-        return 'Chimie';
-      case CourseCategory.biology:
-        return 'Biologie';
-      case CourseCategory.history:
-        return 'Histoire';
-      case CourseCategory.geography:
-        return 'Géo';
-      case CourseCategory.literature:
-        return 'Littérature';
-      case CourseCategory.languages:
-        return 'Langues';
-      case CourseCategory.computerScience:
-        return 'Info';
-      case CourseCategory.other:
-        return 'Autre';
-    }
-  }
-
-  String _getLevelDisplayName(CourseLevel level) {
-    switch (level) {
-      case CourseLevel.primary:
-        return 'Primaire';
-      case CourseLevel.middleSchool:
-        return 'Collège';
-      case CourseLevel.highSchool:
-        return 'Lycée';
-      case CourseLevel.university:
-        return 'Université';
-      case CourseLevel.other:
-        return 'Autre';
-    }
   }
 }

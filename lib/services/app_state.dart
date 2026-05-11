@@ -18,6 +18,7 @@ class AppState extends ChangeNotifier {
   List<Classroom> get userClassrooms => _authService.userClassrooms;
   List<Room> get userRooms          => _authService.userRooms;
   UserStatistics? get userStats     => _authService.userStats;
+  AuthService get authService       => _authService;
 
   // ── Init ──────────────────────────────────────────────────────
   Future<void> init() async {
@@ -201,6 +202,209 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ─── Filières ───────────────────────────────────────────
+  List<Map<String, dynamic>> _filieres = [];
+  bool _filieresLoaded = false;
+  List<Map<String, dynamic>> get filieres => _filieres;
+  bool get filieresLoaded => _filieresLoaded;
+
+  Future<void> loadFilieres() async {
+    _filieresLoaded = false;
+    notifyListeners();
+    _filieres = await _authService.fetchAllFilieres();
+    _filieresLoaded = true;
+    notifyListeners();
+  }
+
+  Future<void> createFiliere(Map<String, dynamic> data) async {
+    await _authService.createFiliere(data);
+    await loadFilieres();
+  }
+
+  Future<void> updateFiliere(String id, Map<String, dynamic> data) async {
+    await _authService.updateFiliere(id, data);
+    await loadFilieres();
+  }
+
+  Future<void> deleteFiliere(String id) async {
+    await _authService.deleteFiliere(id);
+    await loadFilieres();
+  }
+
+  // ─── Niveaux ────────────────────────────────────────────
+  List<Map<String, dynamic>> _niveaux = [];
+  bool _niveauxLoaded = false;
+  List<Map<String, dynamic>> get niveaux => _niveaux;
+  bool get niveauxLoaded => _niveauxLoaded;
+
+  Future<void> loadNiveaux() async {
+    _niveauxLoaded = false;
+    notifyListeners();
+    _niveaux = await _authService.fetchAllNiveaux();
+    _niveauxLoaded = true;
+    notifyListeners();
+  }
+
+  Future<void> createNiveau(Map<String, dynamic> data) async {
+    await _authService.createNiveau(data);
+    await loadNiveaux();
+  }
+
+  Future<void> updateNiveau(String id, Map<String, dynamic> data) async {
+    await _authService.updateNiveau(id, data);
+    await loadNiveaux();
+  }
+
+  Future<void> deleteNiveau(String id) async {
+    await _authService.deleteNiveau(id);
+    await loadNiveaux();
+  }
+
+  // ─── Matières ───────────────────────────────────────────
+  List<Map<String, dynamic>> _matieres = [];
+  bool _matieresLoaded = false;
+  List<Map<String, dynamic>> get matieres => _matieres;
+  bool get matieresLoaded => _matieresLoaded;
+
+  Future<void> loadMatieres() async {
+    _matieresLoaded = false;
+    notifyListeners();
+    _matieres = await _authService.fetchAllMatieres();
+    _matieresLoaded = true;
+    notifyListeners();
+  }
+
+  Future<void> createMatiere(Map<String, dynamic> data) async {
+    await _authService.createMatiere(data);
+    await loadMatieres();
+  }
+
+  Future<void> updateMatiere(String id, Map<String, dynamic> data) async {
+    await _authService.updateMatiere(id, data);
+    await loadMatieres();
+  }
+
+  Future<void> deleteMatiere(String id) async {
+    await _authService.deleteMatiere(id);
+    await loadMatieres();
+  }
+
+  // ─── Classes Scolaires ────────────────────────────────────
+  List<Map<String, dynamic>> _classesScolaires = [];
+  bool _classesScolairesLoaded = false;
+  List<Map<String, dynamic>> get classesScolaires => _classesScolaires;
+  bool get classesScolairesLoaded => _classesScolairesLoaded;
+
+  Future<void> loadClassesScolaires() async {
+    _classesScolairesLoaded = false;
+    notifyListeners();
+    _classesScolaires = await _authService.fetchAllClassesScolaires();
+    _classesScolairesLoaded = true;
+    notifyListeners();
+  }
+
+  Future<void> createClasseScolaire({
+    required String filiereId,
+    required String niveauId,
+    required String nom,
+    required String anneeScolaire,
+  }) async {
+    await _authService.createClasseScolaire(
+      filiereId: filiereId,
+      niveauId: niveauId,
+      nom: nom,
+      anneeScolaire: anneeScolaire,
+    );
+    await loadClassesScolaires();
+  }
+
+  // ─── Teachers ────────────────────────────────────────────
+  List<Map<String, dynamic>> _teachers = [];
+  bool _teachersLoaded = false;
+  List<Map<String, dynamic>> get teachers => _teachers;
+  bool get teachersLoaded => _teachersLoaded;
+
+  Future<void> loadTeachers() async {
+    _teachersLoaded = false;
+    notifyListeners();
+    _teachers = await _authService.fetchAllTeachers();
+    _teachersLoaded = true;
+    notifyListeners();
+  }
+
+  // ─── Classe Profs ───────────────────────────────────────
+  Future<List<Map<String, dynamic>>> fetchClasseProfs(String classeId) async {
+    return await _authService.fetchClasseProfs(classeId);
+  }
+
+  Future<void> createClasseProf({
+    required String classeId,
+    required String matiereId,
+    required String professeurId,
+  }) async {
+    await _authService.createClasseProf(
+      classeId: classeId,
+      matiereId: matiereId,
+      professeurId: professeurId,
+    );
+  }
+
+  Future<void> deleteClasseProf(String assignmentId) async {
+    await _authService.deleteClasseProf(assignmentId);
+  }
+
+  // ─── Étudiants ────────────────────────────────────────────
+  Future<void> createEtudiantAndAddToClasse({
+    required String classeId,
+    required String codeMassar,
+    required String prenom,
+    required String nom,
+    required String dateNaissance,
+    required String cin,
+    required String email,
+    required String telephone,
+  }) async {
+    await _authService.createEtudiantAndAddToClasse(
+      classeId: classeId,
+      codeMassar: codeMassar,
+      prenom: prenom,
+      nom: nom,
+      dateNaissance: dateNaissance,
+      cin: cin,
+      email: email,
+      telephone: telephone,
+    );
+  }
+
+  // ─── Parents ────────────────────────────────────────────
+  List<Map<String, dynamic>> _adminParents = [];
+  bool _adminParentsLoaded = false;
+  List<Map<String, dynamic>> get adminParents => _adminParents;
+  bool get adminParentsLoaded => _adminParentsLoaded;
+
+  Future<void> loadAdminParents() async {
+    _adminParentsLoaded = false;
+    notifyListeners();
+    _adminParents = await _authService.fetchAdminParents();
+    _adminParentsLoaded = true;
+    notifyListeners();
+  }
+
+  Future<void> linkParentEnfant(String parentId, String enfantId, {String relation = 'parent'}) async {
+    await _authService.linkParentEnfant(parentId, enfantId, relation: relation);
+    await loadAdminParents();
+  }
+
+  Future<void> updateParentEnfant(String parentId, String enfantId, Map<String, dynamic> data) async {
+    await _authService.updateParentEnfant(parentId, enfantId, data);
+    await loadAdminParents();
+  }
+
+  Future<void> unlinkParentEnfant(String parentId, String enfantId) async {
+    await _authService.unlinkParentEnfant(parentId, enfantId);
+    await loadAdminParents();
+  }
+
   /// Charge les stats globales pour l'admin
   Future<void> loadGlobalStats() async {
     _globalStatsLoaded = false;
@@ -215,12 +419,21 @@ class AppState extends ChangeNotifier {
 
   /// Charge les données de l'enfant lié (pour le parent)
   Future<void> loadChildData() async {
-    final childId = currentUser?.linkedChildId;
+    if (currentUser == null) return;
+    
+    String? childId = currentUser?.linkedChildId;
+    
+    // Si pas de childId enregistré dans le profil, on cherche le premier lien existant
+    if (childId == null) {
+      childId = await _authService.fetchFirstLinkedChildId(currentUser!.id);
+    }
+
     if (childId == null) {
       _childDataLoaded = true;
       notifyListeners();
       return;
     }
+
     _childDataLoaded = false;
     notifyListeners();
     _childProfile  = await _authService.fetchChildProfile(childId);
@@ -349,6 +562,26 @@ class AppState extends ChangeNotifier {
       description: description,
       category: category,
       level: level,
+    );
+    notifyListeners();
+    return classroom;
+  }
+
+  Future<Classroom> createClassroomWithSchoolClass({
+    required String name,
+    String? description,
+    required String filiereId,
+    required String niveauId,
+    required String matiereId,
+    required String classeScolaireId,
+  }) async {
+    final classroom = await _authService.createClassroomWithSchoolClass(
+      name: name,
+      description: description,
+      filiereId: filiereId,
+      niveauId: niveauId,
+      matiereId: matiereId,
+      classeScolaireId: classeScolaireId,
     );
     notifyListeners();
     return classroom;

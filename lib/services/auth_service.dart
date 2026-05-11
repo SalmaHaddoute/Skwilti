@@ -503,6 +503,465 @@ class AuthService {
     }
   }
 
+  // ─── CRUD Filières ───────────────────────────────────────
+  Future<List<Map<String, dynamic>>> fetchAllFilieres() async {
+    try {
+      print('🔵 [fetchAllFilieres] Début de la récupération...');
+      final response = await _supabase
+          .from('filieres')
+          .select()
+          .order('ordre', ascending: true)
+          .timeout(const Duration(seconds: 10));
+      print('🟢 [fetchAllFilieres] ${response.length} filières récupérées: $response');
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('🔴 [fetchAllFilieres] error: $e');
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>> createFiliere(Map<String, dynamic> data) async {
+    try {
+      final response = await _supabase
+          .from('filieres')
+          .insert(data)
+          .select()
+          .single()
+          .timeout(const Duration(seconds: 10));
+      return Map<String, dynamic>.from(response);
+    } catch (e) {
+      print('⚠️ createFiliere error: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> updateFiliere(String id, Map<String, dynamic> data) async {
+    try {
+      final response = await _supabase
+          .from('filieres')
+          .update(data)
+          .eq('id', id)
+          .select()
+          .single()
+          .timeout(const Duration(seconds: 10));
+      return Map<String, dynamic>.from(response);
+    } catch (e) {
+      print('⚠️ updateFiliere error: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> deleteFiliere(String id) async {
+    try {
+      await _supabase
+          .from('filieres')
+          .delete()
+          .eq('id', id)
+          .timeout(const Duration(seconds: 10));
+    } catch (e) {
+      print('⚠️ deleteFiliere error: $e');
+      rethrow;
+    }
+  }
+
+  // ─── CRUD Niveaux ───────────────────────────────────────
+  Future<List<Map<String, dynamic>>> fetchNiveauxByFiliere(String filiereId) async {
+    try {
+      final response = await _supabase
+          .from('niveaux')
+          .select()
+          .eq('filiere_id', filiereId)
+          .order('ordre', ascending: true)
+          .timeout(const Duration(seconds: 10));
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('⚠️ fetchNiveauxByFiliere error: $e');
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchAllNiveaux() async {
+    try {
+      print('🔵 [fetchAllNiveaux] Début de la récupération...');
+      final response = await _supabase
+          .from('niveaux')
+          .select()
+          .order('ordre', ascending: true)
+          .timeout(const Duration(seconds: 10));
+      print('🟢 [fetchAllNiveaux] ${response.length} niveaux récupérés: $response');
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('🔴 [fetchAllNiveaux] error: $e');
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>> createNiveau(Map<String, dynamic> data) async {
+    try {
+      final response = await _supabase
+          .from('niveaux')
+          .insert(data)
+          .select()
+          .single()
+          .timeout(const Duration(seconds: 10));
+      return Map<String, dynamic>.from(response);
+    } catch (e) {
+      print('⚠️ createNiveau error: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> updateNiveau(String id, Map<String, dynamic> data) async {
+    try {
+      final response = await _supabase
+          .from('niveaux')
+          .update(data)
+          .eq('id', id)
+          .select()
+          .single()
+          .timeout(const Duration(seconds: 10));
+      return Map<String, dynamic>.from(response);
+    } catch (e) {
+      print('⚠️ updateNiveau error: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> deleteNiveau(String id) async {
+    try {
+      await _supabase
+          .from('niveaux')
+          .delete()
+          .eq('id', id)
+          .timeout(const Duration(seconds: 10));
+    } catch (e) {
+      print('⚠️ deleteNiveau error: $e');
+      rethrow;
+    }
+  }
+
+  // ─── CRUD Matières ─────────────────────────────────────
+  Future<List<Map<String, dynamic>>> fetchMatieresByNiveau(String niveauId) async {
+    try {
+      final response = await _supabase
+          .from('matieres')
+          .select()
+          .eq('niveau_id', niveauId)
+          .order('ordre', ascending: true)
+          .timeout(const Duration(seconds: 10));
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('⚠️ fetchMatieresByNiveau error: $e');
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchAllMatieres() async {
+    try {
+      print('🔵 [fetchAllMatieres] Début de la récupération...');
+      final response = await _supabase
+          .from('matieres')
+          .select()
+          .order('ordre', ascending: true)
+          .timeout(const Duration(seconds: 10));
+      print('🟢 [fetchAllMatieres] ${response.length} matières récupérées: $response');
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('🔴 [fetchAllMatieres] error: $e');
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>> createMatiere(Map<String, dynamic> data) async {
+    try {
+      final response = await _supabase
+          .from('matieres')
+          .insert(data)
+          .select()
+          .single()
+          .timeout(const Duration(seconds: 10));
+      return Map<String, dynamic>.from(response);
+    } catch (e) {
+      print('⚠️ createMatiere error: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> updateMatiere(String id, Map<String, dynamic> data) async {
+    try {
+      final response = await _supabase
+          .from('matieres')
+          .update(data)
+          .eq('id', id)
+          .select()
+          .single()
+          .timeout(const Duration(seconds: 10));
+      return Map<String, dynamic>.from(response);
+    } catch (e) {
+      print('⚠️ updateMatiere error: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> deleteMatiere(String id) async {
+    try {
+      await _supabase
+          .from('matieres')
+          .delete()
+          .eq('id', id)
+          .timeout(const Duration(seconds: 10));
+    } catch (e) {
+      print('⚠️ deleteMatiere error: $e');
+      rethrow;
+    }
+  }
+
+  // ─── CRUD Classes Scolaires ───────────────────────────────
+  Future<Map<String, dynamic>> createClasseScolaire({
+    required String filiereId,
+    required String niveauId,
+    required String nom,
+    required String anneeScolaire,
+  }) async {
+    try {
+      print('🔵 [createClasseScolaire] Début de la création...');
+      final response = await _supabase
+          .from('classes_scolaires')
+          .insert({
+            'filiere_id': filiereId,
+            'niveau_id': niveauId,
+            'nom': nom,
+            'annee_scolaire': anneeScolaire,
+            'effectif': 0,
+            'is_active': true,
+            'created_at': DateTime.now().toIso8601String(),
+          })
+          .select()
+          .single()
+          .timeout(const Duration(seconds: 10));
+      print('🟢 [createClasseScolaire] Classe créée: $response');
+      return Map<String, dynamic>.from(response);
+    } catch (e) {
+      print('🔴 [createClasseScolaire] error: $e');
+      rethrow;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchAllClassesScolaires() async {
+    try {
+      print('🔵 [fetchAllClassesScolaires] Début de la récupération...');
+      final response = await _supabase
+          .from('classes_scolaires')
+          .select('*, filieres(*), niveaux(*)')
+          .order('created_at', ascending: false)
+          .timeout(const Duration(seconds: 10));
+      print('🟢 [fetchAllClassesScolaires] ${response.length} classes récupérées');
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('🔴 [fetchAllClassesScolaires] error: $e');
+      return [];
+    }
+  }
+
+  // ─── CRUD Classe Professeurs ───────────────────────────────────────
+  Future<Map<String, dynamic>> createClasseProf({
+    required String classeId,
+    required String matiereId,
+    required String professeurId,
+  }) async {
+    try {
+      print('🔵 [createClasseProf] Début de la création...');
+      final response = await _supabase
+          .from('classe_professeurs')
+          .insert({
+            'classe_id': classeId,
+            'matiere_id': matiereId,
+            'professeur_id': professeurId,
+            'created_at': DateTime.now().toIso8601String(),
+          })
+          .select('*, matieres(*), profiles(*)')
+          .single()
+          .timeout(const Duration(seconds: 10));
+      print('🟢 [createClasseProf] Affectation créée: $response');
+      return Map<String, dynamic>.from(response);
+    } catch (e) {
+      print('🔴 [createClasseProf] error: $e');
+      rethrow;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchClasseProfs(String classeId) async {
+    try {
+      print('🔵 [fetchClasseProfs] Début de la récupération pour classe $classeId...');
+      final response = await _supabase
+          .from('classe_professeurs')
+          .select('*, matieres(*), profiles(*)')
+          .eq('classe_id', classeId)
+          .timeout(const Duration(seconds: 10));
+      print('🟢 [fetchClasseProfs] ${response.length} affectations récupérées');
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('🔴 [fetchClasseProfs] error: $e');
+      return [];
+    }
+  }
+
+  Future<void> deleteClasseProf(String assignmentId) async {
+    try {
+      print('🔵 [deleteClasseProf] Suppression de l\'affectation $assignmentId...');
+      await _supabase
+          .from('classe_professeurs')
+          .delete()
+          .eq('id', assignmentId)
+          .timeout(const Duration(seconds: 10));
+      print('🟢 [deleteClasseProf] Affectation supprimée');
+    } catch (e) {
+      print('🔴 [deleteClasseProf] error: $e');
+      rethrow;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchAllTeachers() async {
+    try {
+      print('🔵 [fetchAllTeachers] Début de la récupération...');
+      final response = await _supabase
+          .from('profiles')
+          .select()
+          .eq('role', 'teacher')
+          .timeout(const Duration(seconds: 10));
+      print('🟢 [fetchAllTeachers] ${response.length} professeurs récupérés');
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('🔴 [fetchAllTeachers] error: $e');
+      return [];
+    }
+  }
+
+  // ─── CRUD Étudiants ───────────────────────────────────────
+  Future<Map<String, dynamic>> createEtudiantAndAddToClasse({
+    required String classeId,
+    required String codeMassar,
+    required String prenom,
+    required String nom,
+    required String dateNaissance,
+    required String cin,
+    required String email,
+    required String telephone,
+  }) async {
+    try {
+      print('🔵 [createEtudiantAndAddToClasse] Début de la création...');
+      
+      // Créer le profil étudiant avec classe_id direct
+      final emailToUse = email.isEmpty ? '$codeMassar@skwilti.ma' : email;
+      final response = await _supabase
+          .from('profiles')
+          .insert({
+            'first_name': prenom,
+            'last_name': nom,
+            'email': emailToUse,
+            'role': 'student',
+            'subscription': 'free',
+            'code_massar': codeMassar,
+            'date_naissance': dateNaissance.isNotEmpty ? dateNaissance : null,
+            'cin': cin.isNotEmpty ? cin : null,
+            'telephone': telephone.isNotEmpty ? telephone : null,
+            'classe_id': classeId,
+            'annee_scolaire': '2025-2026',
+            'created_at': DateTime.now().toIso8601String(),
+          })
+          .select()
+          .single()
+          .timeout(const Duration(seconds: 10));
+
+      print('🟢 [createEtudiantAndAddToClasse] Étudiant créé et ajouté à la classe');
+      return Map<String, dynamic>.from(response);
+    } catch (e) {
+      print('🔴 [createEtudiantAndAddToClasse] error: $e');
+      rethrow;
+    }
+  }
+
+  // ─── CRUD Parent ↔ Enfant ──────────────────────────────
+  Future<List<Map<String, dynamic>>> fetchAdminParents() async {
+    try {
+      final response = await _supabase
+          .from('vue_admin_parents')
+          .select()
+          .timeout(const Duration(seconds: 10));
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('⚠️ fetchAdminParents error: $e');
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>> linkParentEnfant(String parentId, String enfantId, {String relation = 'parent'}) async {
+    try {
+      // 1. Créer la relation dans la table de liaison (parent_enfants)
+      final response = await _supabase
+          .from('parent_enfants')
+          .insert({
+            'parent_id': parentId,
+            'enfant_id': enfantId,
+            'relation': relation,
+          })
+          .select()
+          .single()
+          .timeout(const Duration(seconds: 10));
+
+      return Map<String, dynamic>.from(response);
+    } catch (e) {
+      print('⚠️ linkParentEnfant error: $e');
+      rethrow;
+    }
+  }
+
+  Future<String?> fetchFirstLinkedChildId(String parentId) async {
+    try {
+      final response = await _supabase
+          .from('parent_enfants')
+          .select('enfant_id')
+          .eq('parent_id', parentId)
+          .limit(1)
+          .maybeSingle();
+      return response?['enfant_id']?.toString();
+    } catch (e) {
+      print('⚠️ fetchFirstLinkedChildId error: $e');
+      return null;
+    }
+  }
+
+
+
+
+  Future<void> updateParentEnfant(String parentId, String enfantId, Map<String, dynamic> data) async {
+    try {
+      await _supabase
+          .from('parent_enfants')
+          .update(data)
+          .eq('parent_id', parentId)
+          .eq('enfant_id', enfantId)
+          .timeout(const Duration(seconds: 10));
+    } catch (e) {
+      print('⚠️ updateParentEnfant error: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> unlinkParentEnfant(String parentId, String enfantId) async {
+    try {
+      await _supabase
+          .from('parent_enfants')
+          .delete()
+          .eq('parent_id', parentId)
+          .eq('enfant_id', enfantId)
+          .timeout(const Duration(seconds: 10));
+    } catch (e) {
+      print('⚠️ unlinkParentEnfant error: $e');
+      rethrow;
+    }
+  }
+
   /// Récupère tous les utilisateurs (admin) avec filtre optionnel par rôle
   Future<List<Map<String, dynamic>>> fetchAllUsers({String? roleFilter}) async {
     try {
@@ -520,6 +979,47 @@ class AuthService {
       return [];
     }
   }
+
+  /// Récupère tous les étudiants pour le parent (avec filière et niveau)
+  Future<List<Map<String, dynamic>>> fetchAllStudents() async {
+    try {
+      print('🔵 [fetchAllStudents] Début de la récupération...');
+      
+      // On récupère les étudiants avec une jointure sur parent_enfants pour savoir qui est lié
+      final students = await _supabase
+          .from('profiles')
+          .select('id, first_name, last_name, email, code_massar, classe_id, filiere_id, niveau_id, classes_scolaires(filiere_id, niveau_id), linked_parents:parent_enfants!parent_enfants_enfant_id_fkey(parent_id)')
+          .eq('role', 'student')
+          .order('last_name', ascending: true)
+          .timeout(const Duration(seconds: 15));
+
+      // On aplatit les données
+      final result = students.map<Map<String, dynamic>>((s) {
+        final classe = s['classes_scolaires'] as Map<String, dynamic>?;
+        final parents = s['linked_parents'] as List<dynamic>?;
+        
+        return {
+          ...s,
+          'filiere_id': (s['filiere_id'] ?? classe?['filiere_id'])?.toString(),
+          'niveau_id': (s['niveau_id'] ?? classe?['niveau_id'])?.toString(),
+          // On transforme la liste d'objets parent_enfants en une liste d'IDs de parents
+          'linked_parent_ids': parents?.map((p) => p['parent_id']).toList() ?? [],
+        };
+      }).toList();
+
+
+
+      print('🟢 [fetchAllStudents] ${result.length} étudiants récupérés');
+      return result;
+    } catch (e) {
+      print('🔴 [fetchAllStudents] error: $e');
+      return [];
+    }
+  }
+
+
+
+
 
   /// Récupère les statistiques globales pour l'admin
   Future<GlobalStatistics> getGlobalStatistics() async {
@@ -681,6 +1181,87 @@ class AuthService {
       return classroom;
     } catch (e) {
       throw Exception('Erreur création classroom: $e');
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // CRÉER CLASSROOM AVEC CLASSE SCOLAIRE (import auto des étudiants)
+  // ════════════════════════════════════════════════════════════════
+  Future<Classroom> createClassroomWithSchoolClass({
+    required String name,
+    String? description,
+    required String filiereId,
+    required String niveauId,
+    required String matiereId,
+    required String classeScolaireId,
+  }) async {
+    if (_currentUser?.role != app_user.UserRole.teacher) {
+      throw Exception('Seuls les enseignants peuvent créer des classrooms');
+    }
+    try {
+      final inviteCode = _generateInviteCode();
+
+      // 1. Créer le classroom avec les références
+      final data = await _supabase.from('classrooms').insert({
+        'name': name,
+        'description': description,
+        'teacher_id': _currentUser!.id,
+        'teacher_name': _currentUser!.fullName,
+        'filiere_id': filiereId,
+        'niveau_id': niveauId,
+        'matiere_id': matiereId,
+        'classe_scolaire_id': classeScolaireId,
+        'invite_code': inviteCode,
+      }).select().single();
+
+      final classroomId = data['id'];
+
+      // 2. Récupérer les étudiants de la classe scolaire
+      final students = await _supabase
+          .from('profiles')
+          .select('id')
+          .eq('classe_id', classeScolaireId)
+          .eq('role', 'student')
+          .timeout(const Duration(seconds: 10));
+
+      // 3. Importer les étudiants dans classroom_members
+      if (students.isNotEmpty) {
+        final members = students.map((s) => {
+          'classroom_id': classroomId,
+          'student_id': s['id'],
+          'joined_at': DateTime.now().toIso8601String(),
+        }).toList();
+
+        await _supabase.from('classroom_members').insert(members);
+
+        print('🟢 Importé ${members.length} étudiants dans classroom $classroomId');
+      }
+
+      // 4. Créer aussi l'affectation professeur-classe-matière
+      await _supabase.from('classe_professeurs').insert({
+        'classe_id': classeScolaireId,
+        'matiere_id': matiereId,
+        'professeur_id': _currentUser!.id,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+
+      final classroom = Classroom(
+        id: data['id'],
+        name: data['name'],
+        description: data['description'],
+        teacherId: data['teacher_id'],
+        teacherName: data['teacher_name'],
+        category: CourseCategory.other, // Default since we're using filiere/niveau
+        level: CourseLevel.other, // Default since we're using filiere/niveau
+        createdAt: DateTime.parse(data['created_at']),
+        inviteCode: data['invite_code'],
+        totalStudents: students.length,
+      );
+
+      _userClassrooms.add(classroom);
+      return classroom;
+    } catch (e) {
+      throw Exception('Erreur création classroom avec classe scolaire: $e');
     }
   }
 
