@@ -89,11 +89,16 @@ class _AppInitializerState extends State<AppInitializer> {
     final user = state.currentUser;
     if (user == null) return const AuthScreen();
     switch (user.role) {
-      case app_user.UserRole.teacher: return const TeacherDashboard();
-      case app_user.UserRole.student: return const StudentDashboard();
-      case app_user.UserRole.parent:  return const ParentDashboard();
-      case app_user.UserRole.admin:   return const AdminDashboard();
-      default: return const AuthScreen();
+      case app_user.UserRole.teacher:
+        return const TeacherDashboard();
+      case app_user.UserRole.student:
+        return const StudentDashboard();
+      case app_user.UserRole.parent:
+        return const ParentDashboard();
+      case app_user.UserRole.admin:
+        return const AdminDashboard();
+      default:
+        return const AuthScreen();
     }
   }
 }

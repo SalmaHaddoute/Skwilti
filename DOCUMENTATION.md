@@ -116,6 +116,12 @@ lib/
 - **Gestion des rôles** : Attribution des permissions
 - **Types d'abonnement** : Gestion Freemium/Premium
 
+### WebhookService (`services/webhook_service.dart`)
+- **n8n Integration** : Gestion de la communication avec le pipeline d'automatisation n8n.
+- **Flux d'upload** : Envoi des documents vers Supabase Storage, création des entrées DB, et déclenchement du webhook n8n.
+- **Sauvegarde Auto** : Insertion automatique des questions générées par l'IA dans la table `questions` de Supabase.
+- **Gestion Réseau** : Résolution automatique des URLs pour les environnements Android Emulator (10.0.2.2) et Web/Desktop (localhost).
+
 ---
 
 ## 📊 Modèles de données
@@ -134,6 +140,10 @@ lib/
 - **Organisation** : Titre, description, nombre de questions
 - **Progression** : Suivi d'avancement
 - **Mots-clés** : Tags pour la recherche
+
+### Document (`lib/models/document.dart` - Database Only)
+- **Rôle** : Suivi des fichiers PDF uploadés.
+- **Champs** : user_id, file_url, status (pending, done, error), course_id.
 
 ---
 
@@ -210,6 +220,11 @@ errorRed         = Color(0xFFE24B4A)     // Rouge erreur
 - **Permissions** : Gestion fine des accès
 - **Rapports** : Export des données et statistiques
 
+### Automatisation IA (n8n)
+- **Pipeline** : Déclenchement automatique de la génération dès l'upload d'un PDF.
+- **Ollama/Llama 3.2** : Utilisation de modèles locaux pour l'extraction de contenu et la création de questions.
+- **Synchronisation** : Mise à jour automatique du statut des documents et insertion des questions dans Supabase.
+
 ---
 
 ## 🛠️ Installation et développement
@@ -270,6 +285,7 @@ flutter build web --release
 - ✅ Authentification multi-rôles
 - ✅ Dashboard Étudiant/Enseignant/Admin
 - ✅ Gestion des QCM avec upload PDF
+- ✅ Intégration complète n8n + Ollama pour la génération IA
 - ✅ Système d'abonnements Freemium/Premium
 - ✅ Interface responsive et moderne
 
@@ -289,4 +305,4 @@ flutter build web --release
 
 ---
 
-*Document mis à jour le 11 Mai 2026*
+*Document mis à jour le 12 Mai 2026*

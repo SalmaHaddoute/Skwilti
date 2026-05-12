@@ -3,9 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 import '../theme/app_theme.dart';
 import '../services/app_state.dart';
-import '../models/user.dart';
+import '../services/webhook_service.dart';
+import '../models/user.dart' as app_user;
 import '../widgets/common_widgets.dart';
 import '../widgets/skwilti_nav.dart';
 import 'create_classroom_screen.dart';
@@ -108,7 +110,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
 
 // ── Home Tab ─────────────────────────────────────────────────
 class _HomeTab extends StatefulWidget {
-  final User? user;
+  final app_user.User? user;
   final Function(int) onNavigate;
   const _HomeTab({this.user, required this.onNavigate});
   @override
@@ -122,6 +124,44 @@ class _HomeTabState extends State<_HomeTab> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AppState>().loadTeacherCourses();
     });
+  }
+
+  Future<void> _testN8n() async {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    try {
+      final user = context.read<AppState>().currentUser;
+      if (user == null) {
+        scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Utilisateur non connecté')));
+        return;
+      }
+
+      scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Connexion à n8n... Sélectionnez un PDF.')));
+      
+      final result = await WebhookService().processPdfUpload(
+        title: 'Test n8n ${DateTime.now().toLocal()}',
+        teacherId: user.id,
+        nombreQuestions: 5,
+        difficulte: 'moyen',
+      );
+
+      if (result != null && result['success'] == true) {
+        scaffoldMessenger.showSnackBar(
+          SnackBar(
+            content: const Text('✅ Connexion n8n réussie ! QCM en cours de génération.'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      } else {
+        scaffoldMessenger.showSnackBar(
+          SnackBar(
+            content: Text('❌ Échec n8n: ${result?['error'] ?? 'Inconnu'}'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } catch (e) {
+      scaffoldMessenger.showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: AppColors.error));
+    }
   }
 
   @override
@@ -307,6 +347,8 @@ class _HomeTabState extends State<_HomeTab> {
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const UploadScreen()))),
               _QuickAction(icon: LucideIcons.upload, label: 'Uploader cours', sub: 'PDF, DOCX', color: AppColors.warning,
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LessonUploadScreen(filiere: 'Général', subject: 'Général', semester: 'Général')))),
+              _QuickAction(icon: LucideIcons.zap, label: 'Tester n8n', sub: 'Vérifier la liaison', color: AppColors.info,
+                  onTap: _testN8n),
             ],
           ),
           const SizedBox(height: 20),
@@ -531,12 +573,12 @@ class _UploadedCourseTile extends StatelessWidget {
 }
 
 class _SubscriptionChip extends StatelessWidget {
-  final User? user;
+  final app_user.User? user;
   const _SubscriptionChip({this.user});
 
   @override
   Widget build(BuildContext context) {
-    final isPremium = user?.subscription == SubscriptionType.premium;
+    final isPremium = user?.subscription == app_user.SubscriptionType.premium;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(

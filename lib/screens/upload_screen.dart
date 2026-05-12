@@ -6,7 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../services/app_state.dart';
-import '../services/n8n_service.dart';
+import '../services/webhook_service.dart';
 import '../models/question.dart';
 import '../widgets/common_widgets.dart';
 import 'review_screen.dart';
@@ -81,56 +81,84 @@ class _UploadScreenState extends State<UploadScreen> {
     try {
       await _simulateSteps();
       
-      // APRÈS — vrai appel n8n
-      final n8nUrl = context.read<AppState>().n8nUrl;
-      final service = N8nService();
-      final data = await service.generateQcm(
-        file: _selectedFile!,
-        nbQuestions: _nbQuestions,
-        difficulty: _difficulty,
-        language: 'Français',
-        webhookUrl: n8nUrl,
-        onProgress: (progress) {
-          setState(() {
-            _progress = progress;
-            _progressStep = 'Envoi du fichier... ${(_progress * 100).toInt()}%';
-          });
-        },
+      // APRÈS — Appel du webhook avec WebhookService
+      final result = await WebhookService().processPdfUpload(
+        title: _fileName?.replaceAll(RegExp(r'\.[^.]+$'), '') ?? 'Mon cours',
+        teacherId: context.read<AppState>().currentUser?.id ?? '',
+        nombreQuestions: _nbQuestions,
+        difficulte: _difficulty,
+        langue: 'Français',
+        existingFile: _selectedFile,
       );
-
-      // DEBUG: Afficher les données reçues
-      print('=== DONNÉES REÇUES DE N8N ===');
-      print('Type: ${data.runtimeType}');
-      print('Keys: ${data.keys}');
-      print('Questions: ${data['questions']}');
-      print('Resume: ${data['resume']}');
-      print('Mots clés: ${data['mots_cles']}');
-      print('=============================');
-
-      final questions = (data['questions'] as List)
-          .map((q) => Question.fromJson(q as Map<String, dynamic>))
-          .toList();
-
-      print('=== QUESTIONS CONVERTIES ===');
-      print('Nombre de questions: ${questions.length}');
-      for (int i = 0; i < questions.length; i++) {
-        print('Q${i+1}: ${questions[i].question}');
-        print('Options: ${questions[i].options}');
-        print('Correct: ${questions[i].correctIndex}');
-      }
-      print('=============================');
-
-      if (mounted) {
-        context.read<AppState>().setQuestions(
-          questions,
-          title: _fileName?.replaceAll(RegExp(r'\.[^.]+$'), '') ?? 'Mon cours',
-          summary: data['resume']?.toString() ?? '',
-          keywords: List<String>.from(data['mots_cles'] ?? []),
+      
+      if (result != null && result['success'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ QCM généré avec succès!'),
+            backgroundColor: AppColors.success,
+          ),
         );
+        
+        // Naviguer vers le cours créé
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const ReviewScreen()),
+          MaterialPageRoute(
+            builder: (_) => const ReviewScreen(),
+          ),
         );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Erreur: ${result?['error']}'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+
+      // DEBUG: Afficher les données reçues
+      if (result != null) {
+        print('=== DONNÉES REÇUES DU WEBHOOK ===');
+        print('Type: ${result.runtimeType}');
+        print('Keys: ${result.keys}');
+        print('Success: ${result['success']}');
+        if (result['success'] == true) {
+          final responseData = result['response'];
+          print('Questions: ${responseData['questions']}');
+          print('Resume: ${responseData['resume']}');
+          print('Mots clés: ${responseData['mots_cles']}');
+          print('=============================');
+
+          final questions = (responseData['questions'] as List?)
+              ?.map((q) => Question.fromJson(q as Map<String, dynamic>))
+              .toList() ?? [];
+
+          print('=== QUESTIONS CONVERTIES ===');
+          print('Nombre de questions: ${questions.length}');
+          for (int i = 0; i < questions.length; i++) {
+            print('Q${i+1}: ${questions[i].question}');
+            print('Options: ${questions[i].options}');
+            print('Correct: ${questions[i].correctIndex}');
+          }
+          print('=============================');
+
+          if (mounted) {
+            context.read<AppState>().setQuestions(
+              questions,
+              title: _fileName?.replaceAll(RegExp(r'\.[^.]+$'), '') ?? 'Mon cours',
+              summary: responseData['resume']?.toString() ?? '',
+              keywords: List<String>.from(responseData['mots_cles'] ?? []),
+            );
+
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const ReviewScreen(),
+              ),
+            );
+          }
+        } else {
+          print('❌ Erreur webhook: ${result['error']}');
+        }
       }
     } catch (e) {
       print('=== ERREUR CAPTURÉE ===');
