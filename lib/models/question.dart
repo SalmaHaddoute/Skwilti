@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 class Question {
@@ -20,20 +21,43 @@ class Question {
   factory Question.fromJson(Map<String, dynamic> json) {
     print('=== CONVERSION QUESTION ===');
     print('JSON reçu: $json');
+    
+    // Support both 'question' and 'text' (Supabase/n8n format)
+    final questionText = json['question'] ?? json['text'] ?? '';
+    
+    // Support both 'correct' and 'correct_answer'
+    final correctVal = json['correct'] ?? json['correct_answer'];
+    
+    final options = _parseOptions(json['options']);
+
     print('ID: ${json['id']}');
-    print('Question: ${json['question']}');
-    print('Options: ${json['options']}');
-    print('Correct: ${json['correct']}');
+    print('Question: $questionText');
+    print('Options: $options');
+    print('Correct: $correctVal');
     print('Explication: ${json['explication']}');
     print('========================');
     
     return Question(
       id: json['id']?.toString() ?? UniqueKey().toString(),
-      question: json['question']?.toString() ?? '',
-      options: List<String>.from(json['options'] ?? []),
-      correctIndex: Question._parseCorrectIndex(json['correct'], json['options'] as List<dynamic>? ?? []),
+      question: questionText.toString(),
+      options: options,
+      correctIndex: Question._parseCorrectIndex(correctVal, options),
       explication: json['explication']?.toString() ?? '',
     );
+  }
+
+  static List<String> _parseOptions(dynamic options) {
+    if (options == null) return [];
+    if (options is List) return options.map((e) => e.toString()).toList();
+    if (options is String) {
+      try {
+        final decoded = jsonDecode(options);
+        if (decoded is List) return decoded.map((e) => e.toString()).toList();
+      } catch (e) {
+        print('DEBUG: Erreur parsing options string: $e');
+      }
+    }
+    return [];
   }
 
   static int _parseCorrectIndex(dynamic correctValue, List<dynamic> options) {

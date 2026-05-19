@@ -15,6 +15,8 @@ import 'create_room_screen.dart';
 import 'upload_screen.dart';
 import 'lesson_upload_screen.dart';
 import 'profile_screen.dart';
+import '../models/room.dart';
+import '../models/classroom.dart';
 
 class TeacherDashboard extends StatefulWidget {
   const TeacherDashboard({super.key});
@@ -31,8 +33,63 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
     SkwNavItem(icon: LucideIcons.layers, label: 'Rooms'),
     SkwNavItem(icon: LucideIcons.barChart2, label: 'Notes'),
     SkwNavItem(icon: LucideIcons.bookOpen, label: 'Mes cours'),
+    SkwNavItem(icon: LucideIcons.helpCircle, label: 'Mes QSM'),
     SkwNavItem(icon: LucideIcons.library, label: 'Bibliothèque'),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final appState = context.read<AppState>();
+      final teacherId = appState.currentUser?.id;
+      if (teacherId != null && teacherId.isNotEmpty) {
+        appState.subscribeToTeacherNotifications(teacherId);
+        appState.onNewNotification = (title, body) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                duration: const Duration(seconds: 5),
+                backgroundColor: const Color(0xFF1A1F36),
+                behavior: SnackBarBehavior.floating,
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                content: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(LucideIcons.userCheck, color: AppColors.success, size: 22),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
+                          Text(body, style: const TextStyle(color: Colors.white70, fontSize: 12), maxLines: 2, overflow: TextOverflow.ellipsis),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+        };
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    context.read<AppState>().unsubscribeFromNotifications();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -53,7 +110,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
           _ClassesTab(),
           _RoomsTab(),
           _NotesTab(),
-          _MyCoursesTab(),
+          _MyCoursesTab(onNavigateToLibrary: () => setState(() => _currentIndex = 6)),
+          _QuizzesTab(),
           _LibraryTab(),
         ],
       ),
@@ -89,7 +147,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
       case 2: return 'Rooms';
       case 3: return 'Notes';
       case 4: return 'Mes cours';
-      case 5: return 'Bibliothèque';
+      case 5: return 'Mes QSM';
       default: return 'Skwilti';
     }
   }
@@ -99,7 +157,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
       context: context,
       backgroundColor: Colors.transparent,
       builder: (_) => _CreateOptionsSheet(
-        onUpload: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => const LessonUploadScreen(filiere: 'Général', subject: 'Général', semester: 'Général'))); },
+        onUpload: () { Navigator.pop(context); setState(() => _currentIndex = 6); },
         onClassroom: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateClassroomScreen())); },
         onRoom: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateRoomScreen())); },
         onQsm: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => const UploadScreen())); },
@@ -306,7 +364,7 @@ class _HomeTabState extends State<_HomeTab> {
                           return Column(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [
-                              Text('$val', style: GoogleFonts.nunito(fontSize: 10, fontWeight: FontWeight.w800, color: AppColors.primary)),
+                              Text('$val', style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w900, color: AppColors.primary)),
                               const SizedBox(height: 4),
                               Container(
                                 height: maxVal > 0 ? 80 * (val / maxVal) : 4,
@@ -320,7 +378,7 @@ class _HomeTabState extends State<_HomeTab> {
                               ),
                               const SizedBox(height: 6),
                               Text(['L','M','M','J','V','S','D'][i],
-                                  style: GoogleFonts.nunito(fontSize: 10, color: AppColors.textSub)),
+                                  style: GoogleFonts.nunito(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.textSub)),
                             ],
                           );
                         })),
@@ -346,9 +404,7 @@ class _HomeTabState extends State<_HomeTab> {
               _QuickAction(icon: LucideIcons.fileText, label: 'Créer QSM', sub: 'Questions/Réponses', color: AppColors.primary,
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const UploadScreen()))),
               _QuickAction(icon: LucideIcons.upload, label: 'Uploader cours', sub: 'PDF, DOCX', color: AppColors.warning,
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LessonUploadScreen(filiere: 'Général', subject: 'Général', semester: 'Général')))),
-              _QuickAction(icon: LucideIcons.zap, label: 'Tester n8n', sub: 'Vérifier la liaison', color: AppColors.info,
-                  onTap: _testN8n),
+                  onTap: () => widget.onNavigate(6)),
             ],
           ),
           const SizedBox(height: 20),
@@ -469,8 +525,8 @@ class _UploadedCourseTile extends StatelessWidget {
                       child: Text(
                         title,
                         style: GoogleFonts.inter(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
                           color: isDefault ? AppColors.primary : AppColors.text,
                         ),
                         maxLines: 1,
@@ -508,7 +564,9 @@ class _UploadedCourseTile extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
-                Row(
+                 Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -525,7 +583,6 @@ class _UploadedCourseTile extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
@@ -609,23 +666,43 @@ class _StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border, width: 0.5),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+        border: Border.all(color: AppColors.border.withOpacity(0.5), width: 1),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 30, height: 30,
-            decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(8)),
-            child: Icon(icon, size: 15, color: color),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
+                child: Icon(icon, size: 18, color: color),
+              ),
+              Expanded(
+                child: Text(
+                  value, 
+                  textAlign: TextAlign.right,
+                  style: GoogleFonts.nunito(fontSize: 22, fontWeight: FontWeight.w800, color: color),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
-          Text(value, style: GoogleFonts.nunito(fontSize: 22, fontWeight: FontWeight.w800, color: color)),
-          Text(label, style: GoogleFonts.nunito(fontSize: 10, color: AppColors.textSub, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 12),
+          Text(label, style: GoogleFonts.nunito(fontSize: 12, color: AppColors.textSub, fontWeight: FontWeight.w700)),
         ],
       ),
     );
@@ -663,8 +740,8 @@ class _QuickAction extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(label, style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.text)),
-                  Text(sub, style: GoogleFonts.nunito(fontSize: 10, color: AppColors.textSub)),
+                  Text(label, style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w900, color: AppColors.text)),
+                  Text(sub, style: GoogleFonts.nunito(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.textSub)),
                 ],
               ),
             ),
@@ -729,96 +806,183 @@ class _CourseListTile extends StatelessWidget {
 }
 
 // ── Classes Tab ───────────────────────────────────────────────
-class _ClassesTab extends StatelessWidget {
+class _ClassesTab extends StatefulWidget {
+  @override
+  State<_ClassesTab> createState() => _ClassesTabState();
+}
+
+class _ClassesTabState extends State<_ClassesTab> {
+  Map<String, List<Map<String, dynamic>>> _classroomStudents = {};
+  bool _isLoadingStudents = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadData();
+    });
+  }
+
+  Future<void> _loadData() async {
+    setState(() => _isLoadingStudents = true);
+    final appState = context.read<AppState>();
+    
+    // Load classrooms first if needed (should be already loaded in AppState)
+    final classrooms = appState.userClassrooms;
+    
+    Map<String, List<Map<String, dynamic>>> tempStudents = {};
+    
+    for (var classroom in classrooms) {
+      final students = await appState.fetchClassroomStudents(
+        classroom.id, 
+        schoolClassId: classroom.classeScolaireId
+      );
+      tempStudents[classroom.id] = students;
+    }
+    
+    if (mounted) {
+      setState(() {
+        _classroomStudents = tempStudents;
+        _isLoadingStudents = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final classrooms = context.watch<AppState>().userClassrooms;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          if (classrooms.isEmpty)
-            Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Colors.white, borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.border, width: 0.5),
-              ),
-              child: Column(children: [
-                Icon(LucideIcons.users, size: 40, color: AppColors.textSub),
-                const SizedBox(height: 12),
-                Text('Aucune classe créée', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)),
-                const SizedBox(height: 4),
-                Text('Créez votre première classe pour commencer à enseigner.',
-                    style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSub), textAlign: TextAlign.center),
-              ]),
-            )
-          else
-            ...classrooms.map((c) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: _buildClassCard(context, c.name,
-                  '${c.categoryDisplayName} · ${c.levelDisplayName} · ${c.totalStudents} élèves',
-                  AppColors.primary),
-            )),
-          ElevatedButton.icon(
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateClassroomScreen())),
-            icon: const Icon(LucideIcons.plus, size: 16),
-            label: const Text('Créer une nouvelle classe'),
-          ),
-        ],
+
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Column(
+          children: [
+            if (classrooms.isEmpty)
+              Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white, borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.border, width: 0.5),
+                ),
+                child: Column(children: [
+                  Icon(LucideIcons.users, size: 40, color: AppColors.textSub),
+                  const SizedBox(height: 12),
+                  Text('Aucune classe créée', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)),
+                  const SizedBox(height: 4),
+                  Text('Créez votre première classe pour commencer à enseigner.',
+                      style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSub), textAlign: TextAlign.center),
+                ]),
+              )
+            else
+              ...classrooms.map((c) {
+                final classStudents = _classroomStudents[c.id] ?? [];
+                
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _buildClassCard(context, c, classStudents, AppColors.green),
+                );
+              }),
+            ElevatedButton.icon(
+              onPressed: () async {
+                final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateClassroomScreen()));
+                if (result != null) {
+                  _loadData();
+                }
+              },
+              icon: const Icon(LucideIcons.plus, size: 16),
+              label: const Text('Créer une nouvelle classe'),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildClassCard(BuildContext context, String name, String meta, Color color) {
+  Widget _buildClassCard(BuildContext context, Classroom classroom, List<Map<String, dynamic>> students, Color color) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border, width: 0.5),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          )
+        ],
+        border: Border.all(color: color.withOpacity(0.2), width: 1.5),
       ),
       child: Column(
         children: [
           Container(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
-              color: color,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              gradient: LinearGradient(
+                colors: [color, color.withOpacity(0.8)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
             ),
             child: Row(
               children: [
-                const Icon(LucideIcons.users, color: Colors.white, size: 20),
-                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(LucideIcons.users, color: Colors.white, size: 20),
+                ),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(name, style: GoogleFonts.nunito(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white)),
-                      Text(meta, style: GoogleFonts.nunito(fontSize: 11, color: Colors.white.withOpacity(0.8))),
+                      Text(classroom.name, style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white)),
+                      const SizedBox(height: 2),
+                      Text('${classroom.categoryDisplayName} • ${classroom.levelDisplayName} • ${students.length} élèves', 
+                        style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white.withOpacity(0.9))),
                     ],
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(LucideIcons.share2, size: 16, color: Colors.white),
+                  icon: const Icon(LucideIcons.share2, size: 18, color: Colors.white),
                   onPressed: () {},
                 ),
               ],
             ),
           ),
           Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(16),
             child: Column(
               children: [
-                _buildStudentRow('Amira B.', 'AB', 87),
-                _buildStudentRow('Youssef M.', 'YM', 64),
-                _buildStudentRow('Sara K.', 'SK', 92),
-                const SizedBox(height: 8),
+                if (students.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Text('Aucun étudiant dans cette classe', 
+                      style: GoogleFonts.nunito(fontSize: 13, color: AppColors.textSub, fontStyle: FontStyle.italic)),
+                  )
+                else
+                  ...students.take(5).map((s) => _buildStudentRow(
+                    '${s['first_name'] ?? ''} ${s['last_name'] ?? ''}',
+                    (s['first_name']?.toString().isNotEmpty ?? false) ? s['first_name'].toString()[0] : '?',
+                    color,
+                  )),
+                const SizedBox(height: 12),
                 OutlinedButton.icon(
                   onPressed: () {},
-                  icon: const Icon(LucideIcons.users, size: 14),
-                  label: const Text('Inviter des étudiants'),
-                  style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(36)),
+                  icon: Icon(LucideIcons.userPlus, size: 16, color: color),
+                  label: Text('Inviter des étudiants', style: GoogleFonts.nunito(color: color, fontWeight: FontWeight.w700)),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(40),
+                    side: BorderSide(color: color.withOpacity(0.3), width: 1.5),
+                    backgroundColor: color.withOpacity(0.05),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
                 ),
               ],
             ),
@@ -828,21 +992,34 @@ class _ClassesTab extends StatelessWidget {
     );
   }
 
-  Widget _buildStudentRow(String name, String init, int score) {
-    final c = score >= 80 ? AppColors.success : score >= 60 ? AppColors.primary : AppColors.error;
+  Widget _buildStudentRow(String name, String init, Color color) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         children: [
-          CircleAvatar(radius: 14, backgroundColor: c.withOpacity(0.15),
-            child: Text(init, style: GoogleFonts.nunito(fontSize: 10, fontWeight: FontWeight.w800, color: c))),
-          const SizedBox(width: 10),
-          Text(name, style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text)),
-          const Spacer(),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(color: c.withOpacity(0.12), borderRadius: BorderRadius.circular(20)),
-            child: Text('$score%', style: GoogleFonts.nunito(fontSize: 11, fontWeight: FontWeight.w800, color: c)),
+            padding: const EdgeInsets.all(2),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: color.withOpacity(0.2), width: 1.5),
+            ),
+            child: CircleAvatar(
+              radius: 14, 
+              backgroundColor: color.withOpacity(0.1),
+              child: Text(init, style: GoogleFonts.nunito(fontSize: 11, fontWeight: FontWeight.w800, color: color))
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(name, style: GoogleFonts.nunito(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text)),
+          const Spacer(),
+          // Pas de note car pas encore de QSM
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text('N/A', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.textSub)),
           ),
         ],
       ),
@@ -851,48 +1028,104 @@ class _ClassesTab extends StatelessWidget {
 }
 
 // ── Rooms Tab ─────────────────────────────────────────────────
-class _RoomsTab extends StatelessWidget {
+class _RoomsTab extends StatefulWidget {
+  @override
+  State<_RoomsTab> createState() => _RoomsTabState();
+}
+
+class _RoomsTabState extends State<_RoomsTab> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<AppState>().loadTeacherCourses();
+      context.read<AppState>().loadTeacherRooms();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final rooms = [
-      ('QSM Bio Cell. — Session 1', 'SKW-4821', 18, 30, true),
-      ('QSM Algèbre — Session 3', 'SKW-3312', 22, 20, false),
-      ('QSM Thermo — Révision', 'SKW-7734', 15, 45, false),
-    ];
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.primaryLight,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.primary.withOpacity(0.2), width: 0.5),
-            ),
-            child: Row(
-              children: [
-                const Icon(LucideIcons.info, size: 16, color: AppColors.primary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Timer activé sur toutes les rooms actives. Les étudiants voient le compte à rebours.',
-                    style: GoogleFonts.nunito(fontSize: 12, color: AppColors.primaryDark, fontWeight: FontWeight.w600),
+    final state = context.watch<AppState>();
+    final rooms = state.userRooms;
+
+    return RefreshIndicator(
+      onRefresh: () => state.loadTeacherRooms(),
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.primaryLight,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.primary.withOpacity(0.2), width: 0.5),
+              ),
+              child: Row(
+                children: [
+                  const Icon(LucideIcons.info, size: 16, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Timer activé sur toutes les rooms actives. Les étudiants voient le compte à rebours.',
+                      style: GoogleFonts.nunito(fontSize: 12, color: AppColors.primaryDark, fontWeight: FontWeight.w600),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 14),
-          ...rooms.map((r) => _RoomCard(name: r.$1, code: r.$2, students: r.$3, timer: r.$4, isLive: r.$5)),
-          const SizedBox(height: 12),
-          ElevatedButton.icon(
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateRoomScreen())),
-            icon: const Icon(LucideIcons.plus, size: 16),
-            label: const Text('Créer une nouvelle Room'),
-            style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-          ),
-        ],
+            const SizedBox(height: 14),
+            
+            if (rooms.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  children: [
+                    Icon(LucideIcons.inbox, size: 48, color: AppColors.textSub.withOpacity(0.3)),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Aucune room créée pour le moment.',
+                      style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSub, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
+
+            ...rooms.map((r) {
+              // Trouver la classroom correspondante pour avoir le nombre total d'étudiants
+              final classroom = state.userClassrooms.firstWhere(
+                (c) => c.id == r.classroomId,
+                orElse: () => Classroom(
+                  id: '', name: '', teacherId: '', teacherName: '', 
+                  category: CourseCategory.other, level: CourseLevel.middleSchool, 
+                  createdAt: DateTime.now(), inviteCode: ''
+                ),
+              );
+              
+              return _RoomCard(
+                name: r.name,
+                code: r.roomCode ?? '----',
+                participants: r.participantIds.length,
+                totalStudents: classroom.totalStudents,
+                timer: r.timerMinutes ?? 0,
+                isLive: r.status == RoomStatus.active,
+              );
+            }),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              onPressed: () async {
+                await Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateRoomScreen()));
+                if (mounted) {
+                  state.loadTeacherRooms();
+                }
+              },
+              icon: const Icon(LucideIcons.plus, size: 16),
+              label: const Text('Créer une nouvelle Room'),
+              style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -900,63 +1133,84 @@ class _RoomsTab extends StatelessWidget {
 
 class _RoomCard extends StatelessWidget {
   final String name, code;
-  final int students, timer;
+  final int participants, totalStudents, timer;
   final bool isLive;
-  const _RoomCard({required this.name, required this.code, required this.students, required this.timer, required this.isLive});
+  const _RoomCard({required this.name, required this.code, required this.participants, required this.totalStudents, required this.timer, required this.isLive});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: isLive ? AppColors.success.withOpacity(0.4) : AppColors.border, width: isLive ? 1 : 0.5),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+        border: Border.all(color: isLive ? AppColors.success.withOpacity(0.3) : AppColors.border, width: 1),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Container(
-                width: 8, height: 8,
-                decoration: BoxDecoration(color: isLive ? AppColors.success : AppColors.textSub, shape: BoxShape.circle),
-              ),
-              const SizedBox(width: 8),
-              Expanded(child: Text(name, style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                width: 10, height: 10,
                 decoration: BoxDecoration(
-                  color: isLive ? AppColors.successLight : AppColors.background,
+                  color: isLive ? AppColors.success : AppColors.textSub, 
+                  shape: BoxShape.circle,
+                  boxShadow: isLive ? [BoxShadow(color: AppColors.success.withOpacity(0.4), blurRadius: 6)] : null,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(child: Text(name.isNotEmpty ? name : 'Session QSM', style: GoogleFonts.nunito(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text))),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isLive ? AppColors.success.withOpacity(0.1) : AppColors.background,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
-                  isLive ? 'En direct' : 'Terminé',
-                  style: GoogleFonts.nunito(fontSize: 10, fontWeight: FontWeight.w800, color: isLive ? AppColors.success : AppColors.textSub),
+                  isLive ? 'En cours' : 'Terminé',
+                  style: GoogleFonts.nunito(fontSize: 11, fontWeight: FontWeight.w800, color: isLive ? AppColors.success : AppColors.textSub),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 14),
           Row(
             children: [
-              _RoomMeta(icon: LucideIcons.users, label: '$students étudiants'),
-              const SizedBox(width: 14),
-              _RoomMeta(icon: LucideIcons.clock, label: '$timer min'),
+              _RoomMeta(icon: LucideIcons.users, label: '$participants / $totalStudents élèves'),
+              const SizedBox(width: 16),
+              _RoomMeta(icon: LucideIcons.clock, label: timer > 0 ? '$timer min' : 'Illimité'),
               const Spacer(),
-              GestureDetector(
+              InkWell(
+                borderRadius: BorderRadius.circular(8),
                 onTap: () {
                   Clipboard.setData(ClipboardData(text: 'https://skwilti.ma/room/$code'));
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Lien copié !'), duration: const Duration(seconds: 2)),
+                    const SnackBar(content: Text('Lien de la room copié !'), duration: Duration(seconds: 2)),
                   );
                 },
-                child: Row(
-                  children: [
-                    const Icon(LucideIcons.link, size: 13, color: AppColors.primary),
-                    const SizedBox(width: 4),
-                    Text(code, style: GoogleFonts.nunito(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.primary)),
-                  ],
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(LucideIcons.copy, size: 14, color: AppColors.primary),
+                      const SizedBox(width: 6),
+                      Text(code, style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.primary, letterSpacing: 1)),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -992,31 +1246,55 @@ class _NotesTab extends StatefulWidget {
 class _NotesTabState extends State<_NotesTab> {
   int _selectedClass = 0;
   int _selectedRoom = 0;
-  
-  static const _classes = <String>[];
-  static const _rooms = <int, List<String>>{};
-  static const _students = <int, List<(String, String, int, String, String)>>{};
 
-  double get _averageScore {
-    final currentStudents = _students[_selectedClass] ?? [];
-    if (currentStudents.isEmpty) return 0.0;
-    final total = currentStudents.map((s) => s.$3).reduce((a, b) => a + b);
-    return total / currentStudents.length;
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchInitialRoomSessions();
+    });
   }
 
-  int get _successCount {
-    final currentStudents = _students[_selectedClass] ?? [];
-    return currentStudents.where((s) => s.$3 >= 80).length;
+  void _fetchInitialRoomSessions() {
+    final state = context.read<AppState>();
+    final classrooms = state.userClassrooms;
+    if (classrooms.isNotEmpty) {
+      final currentClass = classrooms[_selectedClass];
+      final roomsForClass = state.userRooms.where((r) => r.classroomId == currentClass.id).toList();
+      if (roomsForClass.isNotEmpty) {
+        state.loadRoomSessions(roomsForClass[_selectedRoom].id);
+      }
+    }
   }
 
-  int get _difficultyCount {
-    final currentStudents = _students[_selectedClass] ?? [];
-    return currentStudents.where((s) => s.$3 < 60).length;
+  double _getAverageScore(List<Map<String, dynamic>> sessions) {
+    if (sessions.isEmpty) return 0.0;
+    final total = sessions.map((s) => (s['score'] as num?)?.toDouble() ?? 0.0).reduce((a, b) => a + b);
+    return total / sessions.length;
+  }
+
+  int _getSuccessCount(List<Map<String, dynamic>> sessions) {
+    return sessions.where((s) {
+      final score = (s['score'] as num?)?.toDouble() ?? 0.0;
+      final total = (s['total_questions'] as num?)?.toDouble() ?? 100.0;
+      return (score / total) * 100 >= 80;
+    }).length;
+  }
+
+  int _getDifficultyCount(List<Map<String, dynamic>> sessions) {
+    return sessions.where((s) {
+      final score = (s['score'] as num?)?.toDouble() ?? 0.0;
+      final total = (s['total_questions'] as num?)?.toDouble() ?? 100.0;
+      return (score / total) * 100 < 60;
+    }).length;
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_classes.isEmpty) {
+    final state = context.watch<AppState>();
+    final classrooms = state.userClassrooms;
+
+    if (classrooms.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -1045,120 +1323,255 @@ class _NotesTabState extends State<_NotesTab> {
       );
     }
 
-    final currentStudents = _students[_selectedClass] ?? [];
-    final currentRooms = _rooms[_selectedClass] ?? [];
+    if (_selectedClass >= classrooms.length) _selectedClass = 0;
+    final currentClass = classrooms[_selectedClass];
+    final currentRooms = state.userRooms.where((r) => r.classroomId == currentClass.id).toList();
+
+    if (_selectedRoom >= currentRooms.length) _selectedRoom = 0;
     
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ─── Class Selector ─────────────────────────────────────
-          _buildClassSelector(),
-          const SizedBox(height: 16),
-          
-          // ─── Room Selector ─────────────────────────────────────
-          _buildRoomSelector(currentRooms),
-          const SizedBox(height: 20),
-          
-          // ─── Stats Cards ───────────────────────────────────────
-          Row(
-            children: [
-              Expanded(child: _StatCard(label: 'Moyenne classe', value: '${_averageScore.toInt()}%', icon: LucideIcons.trendingUp, color: AppColors.primary)),
-              const SizedBox(width: 10),
-              Expanded(child: _StatCard(label: 'Réussite', value: '$_successCount/${currentStudents.length}', icon: LucideIcons.checkCircle, color: AppColors.primary)),
-              const SizedBox(width: 10),
-              Expanded(child: _StatCard(label: 'En difficulté', value: '$_difficultyCount', icon: LucideIcons.alertTriangle, color: AppColors.primary)),
-            ],
-          ),
-          const SizedBox(height: 20),
-          
-          // ─── Students List (Library Style) ─────────────────────
-          Text(
-            'Résultats par étudiant',
-            style: GoogleFonts.inter(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: AppColors.text,
-            ),
-          ),
-          const SizedBox(height: 12),
-          
-          // Students list
-          ...currentStudents.map((student) {
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _StudentScoreCard(
-                name: student.$1,
-                initials: student.$2,
-                score: student.$3,
-                room: student.$4,
-                time: student.$5,
+    final currentStudents = state.currentRoomSessions;
+    final isLoading = !state.roomSessionsLoaded;
+    
+    return RefreshIndicator(
+      onRefresh: () async {
+        final state = context.read<AppState>();
+        if (classrooms.isNotEmpty) {
+          final currentClass = classrooms[_selectedClass];
+          final roomsForClass = state.userRooms.where((r) => r.classroomId == currentClass.id).toList();
+          if (roomsForClass.isNotEmpty && _selectedRoom < roomsForClass.length) {
+            await state.loadRoomSessions(roomsForClass[_selectedRoom].id);
+          }
+        }
+      },
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ─── Header Banner ───────────────────────────────────────
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [AppColors.primaryDark, AppColors.primary],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(color: AppColors.primary.withOpacity(0.3), blurRadius: 16, offset: const Offset(0, 6)),
+                ],
               ),
-            );
-          }),
-          const SizedBox(height: 20),
-          
-          // ─── Export Buttons ───────────────────────────────────
-          Row(
-            children: [
-              Expanded(child: OutlinedButton.icon(
-                onPressed: () {},
-                icon: const Icon(LucideIcons.table, size: 16),
-                label: const Text('Export Excel'),
-                style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(36)),
-              )),
-              const SizedBox(width: 10),
-              Expanded(child: OutlinedButton.icon(
-                onPressed: () {},
-                icon: const Icon(LucideIcons.fileText, size: 16),
-                label: const Text('Export PDF'),
-                style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(36)),
-              )),
-            ],
-          ),
-        ],
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(16)),
+                    child: const Icon(LucideIcons.graduationCap, color: Colors.white, size: 28),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Suivi des Évaluations',
+                          style: GoogleFonts.nunito(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Consultez en temps réel les performances et statistiques de vos classes.',
+                          style: GoogleFonts.nunito(fontSize: 13, color: Colors.white.withOpacity(0.85)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 28),
+            
+            // ─── Class Selector ─────────────────────────────────────
+            Text(
+              'Sélectionnez une classe',
+              style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textSub),
+            ),
+            const SizedBox(height: 12),
+            _buildClassSelector(classrooms),
+            const SizedBox(height: 28),
+            
+            // ─── Room Selector ─────────────────────────────────────
+            _buildRoomSelector(currentRooms),
+            const SizedBox(height: 28),
+            
+            // ─── Stats Overview ────────────────────────────────────
+            Text(
+              'Vue d\'ensemble de l\'évaluation',
+              style: GoogleFonts.nunito(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.text),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(child: _StatCard(label: 'Moyenne générale', value: '${_getAverageScore(currentStudents).toInt()}%', icon: LucideIcons.barChart2, color: AppColors.primary)),
+                const SizedBox(width: 14),
+                Expanded(child: _StatCard(label: 'Taux de réussite', value: '${_getSuccessCount(currentStudents)}/${currentStudents.length}', icon: LucideIcons.checkCircle2, color: AppColors.success)),
+                const SizedBox(width: 14),
+                Expanded(child: _StatCard(label: 'À renforcer', value: '${_getDifficultyCount(currentStudents)}', icon: LucideIcons.alertTriangle, color: AppColors.warning)),
+              ],
+            ),
+            const SizedBox(height: 32),
+            
+            // ─── Students List (Gradebook Style) ─────────────────────
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Résultats détaillés des élèves',
+                  style: GoogleFonts.nunito(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.text),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(20)),
+                  child: Text('${currentStudents.length} copies', style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textSub)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            // Students list
+            if (isLoading)
+              const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
+            else if (currentStudents.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(32),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: AppColors.border.withOpacity(0.5))),
+                child: Column(
+                  children: [
+                    Icon(LucideIcons.folderSearch, size: 48, color: AppColors.textSub.withOpacity(0.5)),
+                    const SizedBox(height: 12),
+                    Text('Aucun résultat d\'évaluation disponible.', style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textSub)),
+                  ],
+                ),
+              )
+            else
+              ...currentStudents.asMap().entries.map((entry) {
+                final index = entry.key;
+                final student = entry.value;
+                final profile = student['profiles'] as Map<String, dynamic>?;
+                final firstName = profile?['first_name'] as String? ?? '';
+                final lastName = profile?['last_name'] as String? ?? '';
+                final name = '$firstName $lastName'.trim().isEmpty ? 'Élève Anonyme' : '$firstName $lastName';
+                final initials = firstName.isNotEmpty ? firstName[0].toUpperCase() : '?';
+                
+                final scoreRaw = (student['score'] as num?)?.toDouble() ?? 0.0;
+                final totalQ = (student['total_questions'] as num?)?.toDouble() ?? 100.0;
+                final scorePct = (scoreRaw / totalQ) * 100;
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _StudentScoreCard(
+                    rank: index + 1,
+                    name: name,
+                    initials: initials,
+                    score: scorePct.toInt(),
+                    room: currentRooms.isNotEmpty ? currentRooms[_selectedRoom].name : 'Évaluation',
+                    time: student['completed_at'] != null 
+                        ? '${DateTime.parse(student['completed_at']).toLocal().day}/${DateTime.parse(student['completed_at']).toLocal().month} à ${DateTime.parse(student['completed_at']).toLocal().hour}h${DateTime.parse(student['completed_at']).toLocal().minute.toString().padLeft(2, '0')}'
+                        : 'N/A',
+                  ),
+                );
+              }),
+            const SizedBox(height: 28),
+            
+            // ─── Export Buttons ───────────────────────────────────
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {},
+                    icon: const Icon(LucideIcons.fileSpreadsheet, size: 18),
+                    label: Text('Exporter Excel', style: GoogleFonts.nunito(fontSize: 14, fontWeight: FontWeight.w700)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: const Color(0xFF10793F), // Excel green
+                      elevation: 0,
+                      side: const BorderSide(color: Color(0xFF10793F)),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {},
+                    icon: const Icon(LucideIcons.fileText, size: 18),
+                    label: Text('Exporter PDF', style: GoogleFonts.nunito(fontSize: 14, fontWeight: FontWeight.w700)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: AppColors.error, // PDF red
+                      elevation: 0,
+                      side: const BorderSide(color: AppColors.error),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildClassSelector() {
+  Widget _buildClassSelector(List<Classroom> classrooms) {
     return Container(
-      height: 40,
+      height: 48,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        itemCount: _classes.length,
+        itemCount: classrooms.length,
         itemBuilder: (context, index) {
           final isSelected = index == _selectedClass;
           return Container(
-            margin: const EdgeInsets.only(right: 8),
+            margin: const EdgeInsets.only(right: 10),
             child: Material(
               color: Colors.transparent,
               child: InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: () => setState(() {
-                  _selectedClass = index;
-                  _selectedRoom = 0; // Reset room when class changes
-                }),
+                borderRadius: BorderRadius.circular(12),
+                onTap: () {
+                  setState(() {
+                    _selectedClass = index;
+                    _selectedRoom = 0;
+                  });
+                  final roomsForClass = context.read<AppState>().userRooms.where((r) => r.classroomId == classrooms[index].id).toList();
+                  if (roomsForClass.isNotEmpty) {
+                    context.read<AppState>().loadRoomSessions(roomsForClass[0].id);
+                  } else {
+                    context.read<AppState>().loadRoomSessions('dummy');
+                  }
+                },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   decoration: BoxDecoration(
-                    color: isSelected ? AppColors.primary : Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: isSelected ? AppColors.primary : AppColors.border,
-                      width: 1,
-                    ),
+                    color: isSelected ? AppColors.dark : Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: isSelected ? [BoxShadow(color: AppColors.dark.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4))] : [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 6)],
+                    border: Border.all(color: isSelected ? AppColors.dark : AppColors.border.withOpacity(0.5), width: 1),
                   ),
                   child: Center(
-                    child: Text(
-                      _classes[index],
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: isSelected ? Colors.white : AppColors.text,
-                      ),
+                    child: Row(
+                      children: [
+                        Icon(LucideIcons.users, size: 16, color: isSelected ? Colors.white : AppColors.textSub),
+                        const SizedBox(width: 8),
+                        Text(
+                          classrooms[index].name,
+                          style: GoogleFonts.nunito(fontSize: 14, fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700, color: isSelected ? Colors.white : AppColors.text),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -1170,55 +1583,76 @@ class _NotesTabState extends State<_NotesTab> {
     );
   }
 
-  Widget _buildRoomSelector(List<String> rooms) {
+  Widget _buildRoomSelector(List<Room> rooms) {
     if (rooms.isEmpty) return const SizedBox.shrink();
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Rooms',
-          style: GoogleFonts.inter(
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-            color: AppColors.text,
-          ),
+          'Sessions d\'évaluation (Rooms)',
+          style: GoogleFonts.nunito(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.text),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 14),
         Container(
-          height: 40,
+          height: 76,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             itemCount: rooms.length,
             itemBuilder: (context, index) {
               final isSelected = index == _selectedRoom;
+              final room = rooms[index];
+              final dateStr = '${room.createdAt.day}/${room.createdAt.month} à ${room.createdAt.hour}h${room.createdAt.minute.toString().padLeft(2, '0')}';
+              
               return Container(
-                margin: const EdgeInsets.only(right: 8),
+                margin: const EdgeInsets.only(right: 14, bottom: 6),
                 child: Material(
                   color: Colors.transparent,
                   child: InkWell(
-                    borderRadius: BorderRadius.circular(20),
-                    onTap: () => setState(() => _selectedRoom = index),
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () {
+                      setState(() => _selectedRoom = index);
+                      context.read<AppState>().loadRoomSessions(room.id);
+                    },
                     child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      duration: const Duration(milliseconds: 250),
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                       decoration: BoxDecoration(
-                        color: isSelected ? AppColors.success : AppColors.background,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: isSelected ? AppColors.success : AppColors.border,
-                          width: 1,
-                        ),
+                        color: isSelected ? AppColors.dark : Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: isSelected ? [BoxShadow(color: AppColors.dark.withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 4))] : [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 2))],
+                        border: Border.all(color: isSelected ? AppColors.dark : AppColors.border.withOpacity(0.5), width: 1),
                       ),
-                      child: Center(
-                        child: Text(
-                          rooms[index],
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: isSelected ? Colors.white : AppColors.textSecondary,
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 38, height: 38,
+                            decoration: BoxDecoration(color: isSelected ? Colors.white.withOpacity(0.2) : AppColors.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+                            child: Icon(LucideIcons.fileCheck, size: 20, color: isSelected ? Colors.white : AppColors.primary),
                           ),
-                        ),
+                          const SizedBox(width: 14),
+                          Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                room.name.isNotEmpty ? room.name : (room.roomCode ?? 'Room'),
+                                style: GoogleFonts.nunito(fontSize: 15, fontWeight: FontWeight.w800, color: isSelected ? Colors.white : AppColors.text),
+                              ),
+                              const SizedBox(height: 2),
+                              Row(
+                                children: [
+                                  Icon(LucideIcons.calendar, size: 12, color: isSelected ? Colors.white.withOpacity(0.8) : AppColors.textSub),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    dateStr,
+                                    style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w600, color: isSelected ? Colors.white.withOpacity(0.9) : AppColors.textSub),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -1232,8 +1666,9 @@ class _NotesTabState extends State<_NotesTab> {
   }
 }
 
-// ── Student Score Card (Simple Style) ───────────────────────────
+// ── Student Score Card (Professional Style) ───────────────────────────
 class _StudentScoreCard extends StatelessWidget {
+  final int rank;
   final String name;
   final String initials;
   final int score;
@@ -1241,6 +1676,7 @@ class _StudentScoreCard extends StatelessWidget {
   final String time;
   
   const _StudentScoreCard({
+    required this.rank,
     required this.name,
     required this.initials,
     required this.score,
@@ -1251,110 +1687,81 @@ class _StudentScoreCard extends StatelessWidget {
   Color get _scoreColor {
     if (score >= 80) return AppColors.success;
     if (score >= 60) return AppColors.primary;
-    return AppColors.error;
+    return AppColors.warning;
+  }
+  
+  String get _statusLabel {
+    if (score >= 80) return 'Maîtrisé';
+    if (score >= 60) return 'Validé';
+    return 'À revoir';
   }
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {/* View student details */},
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border, width: 0.5),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Student Info ─────────────────────────────────────
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 16,
-                  backgroundColor: _scoreColor.withOpacity(0.1),
-                  child: Text(
-                    initials,
-                    style: GoogleFonts.inter(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: _scoreColor,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        name,
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.text,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      Text(
-                        room,
-                        style: GoogleFonts.inter(
-                          fontSize: 10,
-                          color: AppColors.textSub,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 2)),
+        ],
+        border: Border.all(color: AppColors.border.withOpacity(0.4), width: 1),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 32,
+            alignment: Alignment.center,
+            child: Text('#$rank', style: GoogleFonts.nunito(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.textSub)),
+          ),
+          const SizedBox(width: 8),
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: AppColors.primary.withOpacity(0.08),
+            child: Text(
+              initials,
+              style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.primary),
             ),
-            
-            const SizedBox(height: 12),
-            
-            // ── Score and Time ───────────────────────────────────
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: _scoreColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '$score%',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: _scoreColor,
-                    ),
-                  ),
+                Text(
+                  name,
+                  style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
+                const SizedBox(height: 3),
                 Row(
                   children: [
-                    Icon(
-                      LucideIcons.clock,
-                      size: 12,
-                      color: AppColors.textSub,
-                    ),
-                    const SizedBox(width: 4),
+                    Icon(LucideIcons.calendar, size: 12, color: AppColors.textSub),
+                    const SizedBox(width: 6),
                     Text(
                       time,
-                      style: GoogleFonts.inter(
-                        fontSize: 10,
-                        color: AppColors.textSub,
-                      ),
+                      style: GoogleFonts.nunito(fontSize: 12, color: AppColors.textSub, fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
               ],
             ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(color: _scoreColor.withOpacity(0.12), borderRadius: BorderRadius.circular(8)),
+            child: Text(_statusLabel, style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w800, color: _scoreColor)),
+          ),
+          const SizedBox(width: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(color: _scoreColor, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: _scoreColor.withOpacity(0.3), blurRadius: 6, offset: const Offset(0, 2))]),
+            child: Text('$score%', style: GoogleFonts.nunito(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white)),
+          ),
+        ],
       ),
     );
   }
@@ -1362,193 +1769,258 @@ class _StudentScoreCard extends StatelessWidget {
 
 // ── My Courses Tab ─────────────────────────────────────────────
 class _MyCoursesTab extends StatefulWidget {
+  final VoidCallback onNavigateToLibrary;
+  const _MyCoursesTab({Key? key, required this.onNavigateToLibrary}) : super(key: key);
+
   @override
   _MyCoursesTabState createState() => _MyCoursesTabState();
 }
 
 class _MyCoursesTabState extends State<_MyCoursesTab> {
-  int _selectedFiliere = 0;
-  int _selectedSubject = 0;
-  
-  static const _filieres = [
-    'Tronc Commun',
-    '1ère Année Baccalauréat',
-  ];
-  
-  static const _myCoursesSubjects = [
-    {'label': 'Sciences Vie', 'color': AppColors.green},
-    {'label': 'Maths', 'color': AppColors.primary},
-    {'label': 'Physique', 'color': AppColors.info},
-    {'label': 'Chimie', 'color': AppColors.warning},
+  String _selectedSubjectFilter = 'Tous';
+
+  final List<Color> _fallbackColors = [
+    AppColors.primary, AppColors.info, AppColors.success, 
+    AppColors.warning, AppColors.error, Colors.purple
   ];
 
-  List<Map<String, dynamic>> get _myCourses {
-    // Get courses uploaded by this teacher from Supabase
-    final uploadedCourses = context.read<AppState>().teacherCourses;
-    final filiere = _filieres[_selectedFiliere];
-    final subject = _myCoursesSubjects[_selectedSubject]['label'] as String;
-    
-    // Filtre les cours de Supabase
-    return uploadedCourses
-        .where((course) => course['subject'] == subject)
-        .map((course) => {
-          ...course,
-          'fileName': course['file_name'] ?? 'Inconnu',
-          'semester': 'Semestre Actuel',
-          'uploadedAt': course['created_at'] ?? DateTime.now().toIso8601String(),
-          'filiere': filiere, // Fallback to current filiere since column is missing
-          'isDefault': false,
-        })
-        .toList();
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final s = context.read<AppState>();
+      if (!s.teacherCoursesLoaded) s.loadTeacherCourses();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final currentCourses = _myCourses;
-    
+    final state = context.watch<AppState>();
+
+    if (!state.teacherCoursesLoaded) {
+      return const Center(child: Padding(
+        padding: EdgeInsets.all(40),
+        child: CircularProgressIndicator(),
+      ));
+    }
+
+    final allCourses = state.teacherCourses.map((course) => {
+      ...course,
+      'fileName': course['file_name'] ?? 'Inconnu',
+      'semester': 'Semestre Actuel',
+      'uploadedAt': course['created_at'] ?? DateTime.now().toIso8601String(),
+      'isDefault': false,
+    }).toList();
+
+    // Extract unique subjects for the filter pill bar
+    final Set<String> subjectsSet = {'Tous'};
+    for (final c in allCourses) {
+      final sub = (c['subject'] as String? ?? '').trim();
+      if (sub.isNotEmpty) {
+        subjectsSet.add(sub);
+      }
+    }
+    final subjectFilters = subjectsSet.toList();
+
+    final filteredCourses = _selectedSubjectFilter == 'Tous'
+        ? allCourses
+        : allCourses.where((c) => (c['subject'] as String? ?? '').trim() == _selectedSubjectFilter).toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ─── Upload Button ───────────────────────────────────────
+        // ─── Header & Upload Button ───────────────────────────────────────
         Padding(
-          padding: const EdgeInsets.all(16),
-          child: ElevatedButton.icon(
-            onPressed: () {
-              final filiere = _filieres[_selectedFiliere];
-              final subject = _myCoursesSubjects[_selectedSubject]['label'] as String;
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => LessonUploadScreen(
-                    filiere: filiere,
-                    subject: subject,
-                    semester: 'Semestre Actuel',
-                  ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const SizedBox.shrink(),
+              ElevatedButton.icon(
+                onPressed: widget.onNavigateToLibrary,
+                icon: const Icon(LucideIcons.upload, size: 18),
+                label: Text('Uploader cours', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
-              );
-            },
-            icon: const Icon(LucideIcons.upload, size: 18),
-            label: Text('Uploader cours', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ],
+          ),
+        ),
+
+        // ─── Search Info & Count ───────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Text(
+            'Vous avez uploadé ${allCourses.length} cours au total',
+            style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSub),
+          ),
+        ),
+        const SizedBox(height: 12),
+                
+        // ─── Subject filter pills ───────────────────────────────────────────
+        if (subjectFilters.length > 1) ...[
+          Container(
+            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: subjectFilters.length,
+              itemBuilder: (context, index) {
+                final subject = subjectFilters[index];
+                final isSelected = subject == _selectedSubjectFilter;
+                final pillColor = isSelected ? AppColors.primary : AppColors.background;
+                final textColor = isSelected ? Colors.white : AppColors.textSub;
+                
+                return Container(
+                  margin: const EdgeInsets.only(right: 8),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: () => setState(() => _selectedSubjectFilter = subject),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: pillColor,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: isSelected ? AppColors.primary : AppColors.border,
+                            width: 1,
+                          ),
+                        ),
+                        child: Center(
+                          child: Text(
+                            subject,
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: textColor,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
           ),
-        ),
-                
-        // ─── Filière tabs ───────────────────────────────────────────
-        Container(
-          height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: _filieres.length,
-            itemBuilder: (context, index) {
-              final isSelected = index == _selectedFiliere;
-              return Container(
-                margin: const EdgeInsets.only(right: 8),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(20),
-                    onTap: () => setState(() => _selectedFiliere = index),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: isSelected ? AppColors.primary : AppColors.background,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: isSelected ? AppColors.primary : AppColors.border,
-                          width: 1,
-                        ),
-                      ),
-                      child: Center(
-                        child: Text(
-                          _filieres[index],
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: isSelected ? Colors.white : AppColors.textSecondary,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 14),
-        
-        // ─── Subject chips ────────────────────────────────────────
-        Container(
-          height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: _myCoursesSubjects.length,
-            itemBuilder: (context, index) {
-              final isSelected = index == _selectedSubject;
-              final subject = _myCoursesSubjects[index];
-              return Container(
-                margin: const EdgeInsets.only(right: 8),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(20),
-                    onTap: () => setState(() => _selectedSubject = index),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: isSelected ? subject['color'] as Color : AppColors.background,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: isSelected ? subject['color'] as Color : AppColors.border,
-                          width: 1,
-                        ),
-                      ),
-                      child: Center(
-                        child: Text(
-                          subject['label'] as String,
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: isSelected ? Colors.white : AppColors.textSecondary,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 20),
+          const SizedBox(height: 20),
+        ],
         
         // ─── Courses List ─────────────────────────────────────────
         Expanded(
-          child: ListView.separated(
-            padding: const EdgeInsets.symmetric(horizontal: 16).copyWith(bottom: 32),
-            itemCount: currentCourses.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
-            itemBuilder: (context, index) {
-              final course = currentCourses[index];
-              return _MyCourseCard(
-                title: course['title'] as String? ?? 'Sans titre',
-                description: course['description'] as String? ?? '',
-                fileName: course['fileName'] as String? ?? 'Inconnu',
-                semester: course['semester'] as String? ?? 'Semestre Inconnu',
-                uploadedAt: course['uploadedAt'] as String? ?? DateTime.now().toIso8601String(),
-                isDefault: course['isDefault'] as bool? ?? false,
-              );
-            },
-          ),
+          child: filteredCourses.isEmpty
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(LucideIcons.bookOpen, size: 48, color: AppColors.textSub.withOpacity(0.5)),
+                      const SizedBox(height: 12),
+                      Text('Aucun cours uploadé pour le moment.', style: GoogleFonts.inter(color: AppColors.textSub)),
+                    ],
+                  ),
+                ),
+              )
+            : ListView.separated(
+                padding: const EdgeInsets.symmetric(horizontal: 16).copyWith(bottom: 32),
+                itemCount: filteredCourses.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                itemBuilder: (context, index) {
+                  final course = filteredCourses[index];
+                  final courseId = course['id']?.toString() ?? '';
+                  final isDefault = course['isDefault'] as bool? ?? false;
+                  return _MyCourseCard(
+                    title: course['title'] as String? ?? 'Sans titre',
+                    description: course['description'] as String? ?? '',
+                    fileName: course['file_name'] as String? ?? course['fileName'] as String? ?? 'Inconnu',
+                    semester: course['semester'] as String? ?? 'Semestre Actuel',
+                    uploadedAt: course['uploadedAt'] as String? ?? course['created_at'] as String? ?? DateTime.now().toIso8601String(),
+                    isDefault: isDefault,
+                    courseData: course,
+                    onView: () {
+                      showDialog(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          title: Row(
+                            children: [
+                              const Icon(LucideIcons.bookOpen, color: AppColors.primary, size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(child: Text(course['title'] ?? 'Cours', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700))),
+                            ],
+                          ),
+                          content: SingleChildScrollView(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if ((course['description'] ?? '').toString().isNotEmpty) ...[
+                                  Text('Description', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textSub)),
+                                  const SizedBox(height: 4),
+                                  Text(course['description'] ?? '', style: GoogleFonts.inter(fontSize: 14)),
+                                  const SizedBox(height: 12),
+                                ],
+                                Text('Fichier', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textSub)),
+                                const SizedBox(height: 4),
+                                Text(course['file_name'] ?? course['fileName'] ?? 'Inconnu', style: GoogleFonts.inter(fontSize: 13)),
+                                const SizedBox(height: 12),
+                                Text('Filière / Matière', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textSub)),
+                                const SizedBox(height: 4),
+                                Text('${course['filiere'] ?? 'N/A'} • ${course['subject'] ?? 'N/A'}', style: GoogleFonts.inter(fontSize: 13)),
+                              ],
+                            ),
+                          ),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fermer')),
+                          ],
+                        ),
+                      );
+                    },
+                    onEdit: isDefault ? null : () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => LessonUploadScreen(
+                            filiere: course['filiere'] as String? ?? '',
+                            subject: course['subject'] as String? ?? '',
+                            semester: 'Semestre 1',
+                            courseToEdit: course,
+                          ),
+                        ),
+                      );
+                    },
+                    onDelete: isDefault ? null : () async {
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          title: const Text('Supprimer ce cours ?'),
+                          content: Text('Le cours "${course['title'] ?? ''}" sera supprimé définitivement.'),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text('Supprimer', style: TextStyle(color: AppColors.error)),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirmed == true && context.mounted) {
+                        await context.read<AppState>().deleteCourse(courseId);
+                        await context.read<AppState>().loadTeacherCourses();
+                      }
+                    },
+                  );
+                },
+              ),
         ),
       ],
     );
@@ -1563,6 +2035,10 @@ class _MyCourseCard extends StatelessWidget {
   final String semester;
   final String uploadedAt;
   final bool isDefault;
+  final Map<String, dynamic> courseData;
+  final VoidCallback? onView;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
   
   const _MyCourseCard({
     required this.title,
@@ -1570,7 +2046,11 @@ class _MyCourseCard extends StatelessWidget {
     required this.fileName,
     required this.semester,
     required this.uploadedAt,
+    required this.courseData,
     this.isDefault = false,
+    this.onView,
+    this.onEdit,
+    this.onDelete,
   });
 
   @override
@@ -1726,18 +2206,18 @@ class _MyCourseCard extends StatelessWidget {
               Row(
                 children: [
                   IconButton(
-                    onPressed: () {/* View course */},
+                    onPressed: onView,
                     icon: const Icon(LucideIcons.eye, size: 16),
                     color: AppColors.primary,
                   ),
                   if (!isDefault) ...[
                     IconButton(
-                      onPressed: () {/* Edit course */},
+                      onPressed: onEdit,
                       icon: const Icon(LucideIcons.edit, size: 16),
                       color: AppColors.info,
                     ),
                     IconButton(
-                      onPressed: () {/* Delete course */},
+                      onPressed: onDelete,
                       icon: const Icon(LucideIcons.trash2, size: 16),
                       color: AppColors.error,
                     ),
@@ -1800,280 +2280,634 @@ class _LibraryTab extends StatefulWidget {
 
 class _LibraryTabState extends State<_LibraryTab> {
   int _selectedFiliere = 0;
+  int _selectedNiveau = 0;
   int _selectedSubject = 0;
-  final Set<int> _expandedSemesters = {};
+  final Set<int> _expandedSemesters = {0}; // Semestre 1 ouvert par défaut
 
-  static const _filieres = [
-    'Tronc Commun',
-    '1ère Année Baccalauréat',
-    '2ème Année Baccalauréat',
-  ];
-
-  static const _subjects = [
-    {'icon': LucideIcons.calculator, 'label': 'Maths'},
-    {'icon': LucideIcons.atom, 'label': 'Physique-Chimie'},
-    {'icon': LucideIcons.microscope, 'label': 'SVT'},
-    {'icon': LucideIcons.bookOpen, 'label': 'Français'},
-    {'icon': LucideIcons.globe, 'label': 'Anglais'},
-    {'icon': LucideIcons.history, 'label': 'Histoire-Géo'},
-  ];
-
-  // Cours par filière → matière → semestre
-  static const _curriculum = <String, Map<String, List<Map<String, dynamic>>>>{
-    'Tronc Commun': {
-      'Maths': [
-        {'title': 'Semestre 1', 'count': 12, 'lessons': ['Algèbre', 'Géométrie', 'Fonctions', 'Statistiques']},
-        {'title': 'Semestre 2', 'count': 14, 'lessons': ['Nombres complexes', 'Suites', 'Intégrales', 'Probabilités']},
-      ],
-      'Physique-Chimie': [
-        {'title': 'Semestre 1', 'count': 10, 'lessons': ['Mécanique', 'Thermodynamique', 'Optique']},
-        {'title': 'Semestre 2', 'count': 11, 'lessons': ['Électricité', 'Chimie organique', 'Réactions chimiques']},
-      ],
-    },
-    '1ère Année Baccalauréat': {
-      'Maths': [
-        {'title': 'Semestre 1', 'count': 15, 'lessons': ['Limites', 'Dérivées', 'Fonctions exponentielles']},
-        {'title': 'Semestre 2', 'count': 16, 'lessons': ['Logarithmes', 'Trigonométrie', 'Géométrie analytique']},
-      ],
-    },
+  static const _subjectAliases = <String, List<String>>{
+    'Sciences Vie': ['Sciences Vie', 'SVT', 'Biologie', 'sciences vie', 'svt'],
+    'Physique-Chimie': ['Physique-Chimie', 'Physique', 'Chimie', 'physique-chimie', 'physique chimie'],
+    'Maths': ['Maths', 'Mathématiques', 'maths', 'mathématiques'],
+    'Français': ['Français', 'Francais', 'français', 'francais'],
+    'Anglais': ['Anglais', 'anglais'],
+    'Histoire-Géo': ['Histoire-Géo', 'Histoire', 'Géographie', 'histoire-géo'],
   };
 
-  List<Map<String, dynamic>> get _currentSemesters {
-    final subject = _subjects[_selectedSubject]['label'] as String;
-    
-    // Mapper les matières de l'upload vers les catégories de la bibliothèque
-    List<String> mappedSubjects;
-    if (subject == 'SVT') {
-      mappedSubjects = ['Sciences Vie', 'SVT'];
-    } else if (subject == 'Physique-Chimie') {
-      mappedSubjects = ['Physique', 'Chimie', 'Physique-Chimie'];
-    } else {
-      mappedSubjects = [subject];
-    }
-    
-    // Récupérer les cours depuis Supabase
-    final uploadedLessons = context.read<AppState>().teacherCourses
-        .where((course) => mappedSubjects.contains(course['subject'] as String?))
-        .toList();
-    
-    // Filtrer par semestre
-    final s1Lessons = uploadedLessons
-        .where((course) => (course['description'] as String? ?? '').contains('Semestre 1'))
-        .map((lesson) => lesson['title'] as String? ?? 'Sans titre')
-        .toList();
+  final List<Color> _fallbackColors = [
+    AppColors.primary, AppColors.info, AppColors.success, 
+    AppColors.warning, AppColors.error, Colors.purple
+  ];
 
-    final s2Lessons = uploadedLessons
-        .where((course) => (course['description'] as String? ?? '').contains('Semestre 2'))
-        .map((lesson) => lesson['title'] as String? ?? 'Sans titre')
-        .toList();
-
-    // Pour les cours qui n'ont pas de semestre défini ou différent
-    final otherLessons = uploadedLessons
-        .where((course) {
-          final desc = course['description'] as String? ?? '';
-          return !desc.contains('Semestre 1') && !desc.contains('Semestre 2');
-        })
-        .map((lesson) => lesson['title'] as String? ?? 'Sans titre')
-        .toList();
-        
-    s1Lessons.addAll(otherLessons); // Par défaut on les met dans le S1 s'ils n'ont pas de semestre
-      
-    return [
-      {
-        'title': 'Semestre 1',
-        'count': s1Lessons.length,
-        'lessons': s1Lessons,
-        'uploadedCount': s1Lessons.length,
-      },
-      {
-        'title': 'Semestre 2',
-        'count': s2Lessons.length,
-        'lessons': s2Lessons,
-        'uploadedCount': s2Lessons.length,
-      }
-    ];
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final s = context.read<AppState>();
+      if (!s.adminCoursesLoaded) s.loadAdminCourses();
+      if (!s.filieresLoaded) s.loadFilieres();
+      if (!s.niveauxLoaded) s.loadNiveaux();
+      if (!s.matieresLoaded) s.loadMatieres();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // ─── Titre Bibliothèque ────────────────────────────────────
-        const SizedBox(height: 8),
+    final state = context.watch<AppState>();
+    final filieres = state.filieres;
+    final allMatieres = state.matieres;
+    final niveaux = state.niveaux;
 
-        // ─── Espace entre titre et filière tabs ─────────────────────
-        const SizedBox(height: 20),
+    if (!state.adminCoursesLoaded || !state.filieresLoaded || !state.niveauxLoaded || !state.matieresLoaded) {
+      return const Center(child: Padding(
+        padding: EdgeInsets.all(40),
+        child: CircularProgressIndicator(),
+      ));
+    }
 
-        // ─── Filière tabs ───────────────────────────────────────────
-        _buildFiliereTabs(),
-        const SizedBox(height: 14),
-
-        // ─── Subject chips ────────────────────────────────────────
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: _buildSubjectChips(),
+    if (filieres.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(40),
+          child: Text('Aucune filière disponible', style: GoogleFonts.inter(color: AppColors.textSub)),
         ),
-        const SizedBox(height: 24),
+      );
+    }
 
-        const SizedBox(height: 20),
+    if (_selectedFiliere >= filieres.length) _selectedFiliere = 0;
+    
+    final selectedFiliereId = filieres[_selectedFiliere]['id']?.toString();
+    final niveauxForFiliere = niveaux.where((n) => n['filiere_id']?.toString() == selectedFiliereId).toList();
+    
+    if (_selectedNiveau >= niveauxForFiliere.length) {
+      _selectedNiveau = 0;
+    }
 
-        // ─── Accordion + dossiers ─────────────────────────────────
-        Expanded(
-          child: ListView.separated(
-            padding: const EdgeInsets.symmetric(horizontal: 16).copyWith(bottom: 32),
-            itemCount: _currentSemesters.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 10),
-            itemBuilder: (context, i) {
-              final sem = _currentSemesters[i];
-              final expanded = _expandedSemesters.contains(i);
-              return _SemesterSection(
-                title: sem['title'] as String,
-                lessonCount: sem['count'] as int,
-                lessons: (sem['lessons'] as List<String>),
-                isExpanded: expanded,
-                semesterData: sem,
-                onToggle: () => setState(() {
-                  expanded ? _expandedSemesters.remove(i) : _expandedSemesters.add(i);
+    final selectedNiveauId = niveauxForFiliere.isNotEmpty ? niveauxForFiliere[_selectedNiveau]['id']?.toString() : null;
+    final matieres = allMatieres.where((m) => m['niveau_id']?.toString() == selectedNiveauId).toList();
+
+    if (_selectedSubject >= matieres.length) _selectedSubject = 0;
+
+    final selectedFiliereName = (filieres[_selectedFiliere]['nom'] as String? ?? '').trim();
+    final selectedNiveauName = niveauxForFiliere.isNotEmpty ? (niveauxForFiliere[_selectedNiveau]['nom'] as String? ?? '').trim() : '';
+    final selectedSubjectName = matieres.isNotEmpty ? (matieres[_selectedSubject]['nom'] as String? ?? '').trim() : '';
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16).copyWith(bottom: 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Ma bibliothèque',
+                style: GoogleFonts.inter(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.text,
+                ),
+              ),
+              SkwBtn(
+                label: 'Uploader',
+                icon: LucideIcons.upload,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => LessonUploadScreen(
+                        filiere: selectedFiliereName,
+                        subject: selectedSubjectName,
+                        semester: 'Semestre Actuel',
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          
+          // Level navigation
+          SizedBox(
+            height: 40,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: filieres.length,
+              itemBuilder: (context, index) {
+                final isSelected = index == _selectedFiliere;
+                final nom = filieres[index]['nom'] as String? ?? 'Filière';
+                return Container(
+                  margin: const EdgeInsets.only(right: 8),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () => setState(() {
+                      _selectedFiliere = index;
+                      _selectedNiveau = 0; // Reset niveau when filiere changes
+                      _selectedSubject = 0;
+                    }),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isSelected ? AppColors.primary : AppColors.background,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isSelected ? AppColors.primary : AppColors.border,
+                          width: 1,
+                        ),
+                      ),
+                      child: Center(
+                        child: Text(
+                          nom,
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: isSelected ? Colors.white : AppColors.textSub,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Niveau navigation
+          if (niveauxForFiliere.isNotEmpty) ...[
+            SizedBox(
+              height: 36,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: niveauxForFiliere.length,
+                itemBuilder: (context, index) {
+                  final isSelected = index == _selectedNiveau;
+                  final nom = niveauxForFiliere[index]['nom'] as String? ?? 'Niveau';
+                  return Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(18),
+                      onTap: () => setState(() {
+                        _selectedNiveau = index;
+                        _selectedSubject = 0; // Reset subject when niveau changes
+                      }),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: isSelected ? AppColors.primary.withOpacity(0.1) : Colors.transparent,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: isSelected ? AppColors.primary : AppColors.border,
+                            width: 1,
+                          ),
+                        ),
+                        child: Center(
+                          child: Text(
+                            nom,
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: isSelected ? AppColors.primary : AppColors.textSub,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
+          
+          // Subject chips
+          SizedBox(
+            height: 40,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: matieres.length,
+              itemBuilder: (context, index) {
+                final isSelected = index == _selectedSubject;
+                final matiere = matieres[index];
+                final label = matiere['nom'] as String? ?? 'Matière';
+                final subjectColor = _fallbackColors[index % _fallbackColors.length];
+                
+                return Container(
+                  margin: const EdgeInsets.only(right: 8),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () => setState(() => _selectedSubject = index),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isSelected ? subjectColor : AppColors.background,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isSelected ? subjectColor : AppColors.border,
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            LucideIcons.bookOpen,
+                            size: 14,
+                            color: isSelected ? Colors.white : subjectColor,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            label,
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: isSelected ? Colors.white : AppColors.textSub,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 24),
+          
+          // Semesters list
+          Builder(
+            builder: (context) {
+              final subjectLabel = selectedSubjectName;
+              final aliases = _subjectAliases[subjectLabel] ?? [subjectLabel];
+              
+              // Filter all courses for the selected subject and niveau, ensuring unique titles
+              final seenTitles = <String>{};
+              final allFilteredCourses = state.adminCourses.where((c) {
+                final title = c['title'] as String? ?? '';
+                final courseSubject = (c['subject'] as String? ?? '').trim();
+                final courseFiliere = (c['filiere'] as String? ?? '').trim(); // Database still uses 'filiere' column for niveau name
+                
+                final niveauMatch = courseFiliere.isNotEmpty 
+                    ? (courseFiliere.toLowerCase() == selectedNiveauName.toLowerCase() ||
+                       courseFiliere.toLowerCase() == selectedFiliereName.toLowerCase() ||
+                       (selectedNiveauName.isNotEmpty && courseFiliere.toLowerCase().contains(selectedNiveauName.toLowerCase())) ||
+                       (selectedNiveauName.isNotEmpty && selectedNiveauName.toLowerCase().contains(courseFiliere.toLowerCase())))
+                    : (_selectedFiliere == 0 && _selectedNiveau == 0);
+                final subjectMatch = aliases.any((alias) =>
+                    courseSubject.toLowerCase() == alias.toLowerCase());
+                
+                if (niveauMatch && subjectMatch && !seenTitles.contains(title)) {
+                  seenTitles.add(title);
+                  return true;
+                }
+                return false;
+              }).toList();
+
+              if (allFilteredCourses.isEmpty) {
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(32),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(LucideIcons.fileX, size: 48, color: AppColors.textSub.withOpacity(0.3)),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Aucune ressource trouvée pour cette matière.',
+                        style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSub, fontWeight: FontWeight.w600),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              return Column(
+                children: List.generate(2, (index) {
+                  final semesterNum = index + 1;
+                  final isExpanded = _expandedSemesters.contains(index);
+                  
+                  // Filter courses for this semester
+                  final semesterCourses = allFilteredCourses.where((c) {
+                    final desc = (c['description'] as String? ?? '').toLowerCase();
+                    if (semesterNum == 1) return desc.contains('semestre 1') || !desc.contains('semestre 2');
+                    return desc.contains('semestre 2');
+                  }).toList();
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppColors.border, width: 1),
+                    ),
+                    child: Column(
+                      children: [
+                        InkWell(
+                          onTap: () => setState(() {
+                            isExpanded ? _expandedSemesters.remove(index) : _expandedSemesters.add(index);
+                          }),
+                          borderRadius: BorderRadius.circular(16),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Row(
+                              children: [
+                                Text(
+                                  'Semestre $semesterNum',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.text,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Text(
+                                  '${semesterCourses.length} leçons',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textSub,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                AnimatedRotation(
+                                  turns: isExpanded ? 0.5 : 0,
+                                  duration: const Duration(milliseconds: 200),
+                                  child: const Icon(LucideIcons.chevronDown, size: 18, color: AppColors.textSub),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        if (isExpanded && semesterCourses.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+                            child: GridView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                mainAxisSpacing: 12,
+                                crossAxisSpacing: 12,
+                                childAspectRatio: 1.1,
+                              ),
+                              itemCount: semesterCourses.length,
+                              itemBuilder: (context, i) {
+                                final course = semesterCourses[i];
+                                return _FolderCard(
+                                  title: course['title'] as String? ?? 'Sans titre',
+                                  onTap: () {
+                                    // Action d'ouverture
+                                  },
+                                );
+                              },
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
                 }),
-                onUpload: () => _showLessonUploadDialog(sem['title'] as String),
               );
             },
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Folder Card ───────────────────────────────────────────────
+class _FolderCard extends StatelessWidget {
+  final String title;
+  final VoidCallback onTap;
+
+  const _FolderCard({required this.title, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8F9FB),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.border.withOpacity(0.5), width: 1),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Image.asset(
+              'assets/images/image.png', // L'image du dossier jaune des screenshots
+              width: 70,
+              height: 70,
+              errorBuilder: (context, error, stackTrace) => 
+                const Icon(LucideIcons.folder, size: 50, color: AppColors.warning),
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                title,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.text,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QuizzesTab extends StatefulWidget {
+  @override
+  State<_QuizzesTab> createState() => _QuizzesTabState();
+}
+
+class _QuizzesTabState extends State<_QuizzesTab> {
+  @override
+  Widget build(BuildContext context) {
+    final courses = context.watch<AppState>().teacherCourses;
+    final quizzes = courses.where((c) => (c['question_count'] ?? 0) > 0).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+
+
+        Expanded(
+          child: quizzes.isEmpty 
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(LucideIcons.fileQuestion, size: 48, color: AppColors.textSub.withOpacity(0.5)),
+                    const SizedBox(height: 16),
+                    Text('Aucun QSM généré', 
+                      style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textSub)),
+                    const SizedBox(height: 8),
+                    Text('Uploadez un cours pour générer votre premier QSM.',
+                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSub)),
+                  ],
+                ),
+              )
+            : ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                itemCount: quizzes.length,
+                itemBuilder: (context, index) {
+                  final quiz = quizzes[index];
+                  return _QuizCard(quiz: quiz);
+                },
+              ),
         ),
       ],
     );
   }
+}
 
-  Widget _buildFiliereTabs() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: Row(
-        children: List.generate(_filieres.length, (i) {
-          final active = i == _selectedFiliere;
-          return GestureDetector(
-            onTap: () => setState(() {
-              _selectedFiliere = i;
-              _expandedSemesters.clear();
-            }),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              margin: const EdgeInsets.only(right: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
-              decoration: BoxDecoration(
-                color: active ? AppColors.primary : const Color(0xFFEEEEEE),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                _filieres[i],
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: active ? Colors.white : const Color(0xFF888888),
-                ),
-              ),
-            ),
-          );
-        }),
-      ),
-    );
-  }
+class _QuizCard extends StatelessWidget {
+  final Map<String, dynamic> quiz;
+  const _QuizCard({required this.quiz});
 
-  Widget _buildSubjectChips() {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: List.generate(_subjects.length, (i) {
-        final active = i == _selectedSubject;
-        final subject = _subjects[i];
-        return GestureDetector(
-          onTap: () => setState(() {
-            _selectedSubject = i;
-            _expandedSemesters.clear();
-          }),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: BoxDecoration(
-              color: active ? AppColors.primary : const Color(0xFFEEEEEE),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: active ? AppColors.primary : const Color(0xFFDDDDDD),
-                width: 0.5,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(subject['icon'] as IconData, size: 16,
-                    color: active ? Colors.white : const Color(0xFF888888)),
-                const SizedBox(width: 7),
-                Text(
-                  subject['label'] as String,
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: active ? Colors.white : const Color(0xFF888888),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      }),
-    );
-  }
-
-  void _showUploadDialog() {
+  void _confirmDelete(BuildContext context) {
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: Text('Créer QSM', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Choisissez la filière et la matière', style: GoogleFonts.inter()),
-            const SizedBox(height: 16),
-            Text('Filière: ${_filieres[_selectedFiliere]}', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
-            Text('Matière: ${_subjects[_selectedSubject]['label'] as String}', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
-          ],
-        ),
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Supprimer le QSM ?', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+        content: Text('Êtes-vous sûr de vouloir supprimer ce QSM ? Cette action est irréversible.', style: GoogleFonts.inter(fontSize: 14)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Annuler', style: GoogleFonts.inter()),
+            child: Text('Annuler', style: GoogleFonts.inter(color: AppColors.textSub)),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => UploadScreen(),
-                ),
+              
+              // Afficher un petit indicateur de chargement
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Suppression du QSM en cours...')),
               );
+              
+              await context.read<AppState>().deleteCourse(quiz['id'] as String);
+              
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('QSM supprimé avec succès !')),
+                );
+              }
             },
-            child: Text('Continuer', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: Text('Supprimer', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
           ),
         ],
       ),
     );
   }
 
-  void _showLessonUploadDialog(String semesterTitle) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => LessonUploadScreen(
-          filiere: 'Général',
-          subject: 'Général',
-          semester: semesterTitle,
-        ),
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border, width: 0.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          )
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48, height: 48,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [AppColors.primary.withOpacity(0.1), AppColors.primary.withOpacity(0.05)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(LucideIcons.fileText, color: AppColors.primary, size: 22),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(quiz['title'] ?? 'QSM sans titre', 
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.text),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 4),
+                Text('${quiz['subject'] ?? 'Général'} · ${quiz['question_count'] ?? 0} questions',
+                  style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSub, fontWeight: FontWeight.w500)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            icon: const Icon(LucideIcons.trash2, color: Colors.redAccent, size: 20),
+            onPressed: () => _confirmDelete(context),
+            tooltip: 'Supprimer',
+          ),
+          const SizedBox(width: 4),
+          SkwBtn(
+            label: 'Lancer',
+            icon: LucideIcons.play,
+            outlined: true,
+            onTap: () async {
+              // Charger le QCM dans l'état global
+              final scaffold = ScaffoldMessenger.of(context);
+              
+              // Afficher un petit indicateur de chargement
+              scaffold.showSnackBar(
+                SnackBar(
+                  content: Text('Chargement du QSM: ${quiz['title']}...'),
+                  duration: const Duration(seconds: 1),
+                ),
+              );
+
+              await context.read<AppState>().loadQcmForCourse(
+                quiz['id'] as String,
+                quiz['title'] as String? ?? 'Sans titre',
+              );
+              
+              if (context.mounted) {
+                // Naviguer vers la création de room
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const CreateRoomScreen()),
+                );
+              }
+            },
+          ),
+        ],
       ),
     );
   }
 }
+
+
 
 // ── Section semestre avec accordion + grille de dossiers ─────────────────────
 class _SemesterSection extends StatelessWidget {

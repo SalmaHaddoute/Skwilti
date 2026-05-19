@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
+import 'package:fl_chart/fl_chart.dart';
 import '../theme/app_theme.dart';
-import '../models/user.dart';
+import '../models/user.dart' as app_user;
 import '../services/app_state.dart';
 import 'admin_course_management.dart';
 import 'admin_structure_management.dart';
@@ -78,6 +79,30 @@ class _StatsTabState extends State<_StatsTab> {
       s.loadMatieres();
       s.loadAdminParents();
       s.loadClassesScolaires();
+      s.loadNotifications();
+
+      if (s.currentUser != null) {
+        s.subscribeToTeacherNotifications(s.currentUser!.id);
+        s.onNewNotification = (title, body) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  const SizedBox(height: 2),
+                  Text(body, style: const TextStyle(fontSize: 11)),
+                ],
+              ),
+              backgroundColor: AppColors.error,
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        };
+      }
     });
   }
 
@@ -91,7 +116,7 @@ class _StatsTabState extends State<_StatsTab> {
       (LucideIcons.users, '${globalStats?.totalStudents ?? '--'}', 'Étudiants', AppColors.green, globalStats != null && globalStats.totalUsers > 0 ? globalStats.totalStudents / globalStats.totalUsers : 0.0),
       (LucideIcons.graduationCap, '${globalStats?.totalTeachers ?? '--'}', 'Enseignants', AppColors.primary, globalStats != null && globalStats.totalUsers > 0 ? globalStats.totalTeachers / globalStats.totalUsers : 0.0),
       (LucideIcons.heart, '${globalStats?.totalParents ?? '--'}', 'Parents', const Color(0xFF9B59B6), globalStats != null && globalStats.totalUsers > 0 ? globalStats.totalParents / globalStats.totalUsers : 0.0),
-      (LucideIcons.fileText, '${globalStats?.totalQsmCreated ?? '--'}', 'QSM créés', AppColors.info, 0.88),
+      (LucideIcons.fileText, '${globalStats?.totalQsmCreated ?? '--'}', 'QSM créés', AppColors.info, globalStats?.overallCompletionRate ?? 0.0),
     ];
 
     final maxActivity = activity.values.fold(1, (a, b) => a > b ? a : b);
@@ -136,7 +161,7 @@ class _StatsTabState extends State<_StatsTab> {
           ),
         ),
         const SizedBox(height: 20),
-        // Graphe activité réelle
+        // Graphe d'activité de la semaine interactif et moderne
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
@@ -144,69 +169,254 @@ class _StatsTabState extends State<_StatsTab> {
             border: Border.all(color: AppColors.border, width: 0.5),
             boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
           ),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Activité de la semaine',
-                style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text)),
-            const SizedBox(height: 16),
-            if (!loaded)
-              const Center(child: CircularProgressIndicator())
-            else
-              SizedBox(
-                height: 150,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    for (int i = 0; i < 7; i++) ...[
-                      if (i > 0) const SizedBox(width: 8),
-                      Expanded(child: Column(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          Text('${activity[i] ?? 0}', style: GoogleFonts.nunito(fontSize: 10, fontWeight: FontWeight.w800, color: AppColors.primary)),
-                          const SizedBox(height: 4),
-                          Container(
-                            height: maxActivity > 0 ? 80 * ((activity[i] ?? 0) / maxActivity) : 4,
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [AppColors.primary, AppColors.primary2],
-                                begin: Alignment.bottomCenter, end: Alignment.topCenter,
-                              ),
-                              borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(['Lu','Ma','Me','Je','Ve','Sa','Di'][i],
-                              style: GoogleFonts.nunito(fontSize: 10, color: AppColors.textSub)),
-                        ],
-                      )),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Activité de la semaine',
+                        style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text),
+                      ),
+                      Text(
+                        'Volume cumulé des actions de la plateforme',
+                        style: GoogleFonts.nunito(fontSize: 11, color: AppColors.textSub),
+                      ),
                     ],
-                  ],
-                ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Live 7j',
+                      style: GoogleFonts.nunito(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-          ]),
+              const SizedBox(height: 24),
+              if (!loaded)
+                const SizedBox(
+                  height: 160,
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else
+                SizedBox(
+                  height: 160,
+                  child: BarChart(
+                    BarChartData(
+                      alignment: BarChartAlignment.spaceAround,
+                      maxY: maxActivity > 0 ? (maxActivity * 1.25).ceilToDouble() : 5,
+                      barTouchData: BarTouchData(
+                        touchTooltipData: BarTouchTooltipData(
+                          getTooltipColor: (_) => AppColors.text.withOpacity(0.95),
+                          tooltipRoundedRadius: 8,
+                          tooltipPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                            final value = rod.toY.round();
+                            final today = DateTime.now();
+                            final targetDate = today.subtract(Duration(days: 6 - groupIndex));
+                            final dayLabel = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'][targetDate.weekday - 1];
+                            return BarTooltipItem(
+                              '$dayLabel\n',
+                              GoogleFonts.nunito(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 11,
+                              ),
+                              children: [
+                                TextSpan(
+                                  text: '$value actions',
+                                  style: GoogleFonts.nunito(
+                                    color: AppColors.primary2,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                      titlesData: FlTitlesData(
+                        show: true,
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            getTitlesWidget: (value, meta) {
+                              final index = value.toInt();
+                              if (index >= 0 && index < 7) {
+                                final today = DateTime.now();
+                                final targetDate = today.subtract(Duration(days: 6 - index));
+                                final isToday = targetDate.day == today.day && targetDate.month == today.month && targetDate.year == today.year;
+                                final label = ['Lu','Ma','Me','Je','Ve','Sa','Di'][targetDate.weekday - 1];
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 8),
+                                  child: Text(
+                                    label,
+                                    style: GoogleFonts.nunito(
+                                      fontSize: 11,
+                                      fontWeight: isToday ? FontWeight.w900 : FontWeight.w700,
+                                      color: isToday ? AppColors.primary : AppColors.textSub,
+                                    ),
+                                  ),
+                                );
+                              }
+                              return const Text('');
+                            },
+                          ),
+                        ),
+                        leftTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 24,
+                            getTitlesWidget: (value, meta) {
+                              if (value == meta.max) return const Text('');
+                              return Text(
+                                '${value.toInt()}',
+                                style: GoogleFonts.nunito(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textSub,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      ),
+                      gridData: FlGridData(
+                        show: true,
+                        drawVerticalLine: false,
+                        getDrawingHorizontalLine: (value) => FlLine(
+                          color: AppColors.border,
+                          strokeWidth: 0.8,
+                          dashArray: [4, 4],
+                        ),
+                      ),
+                      borderData: FlBorderData(show: false),
+                      barGroups: [
+                        for (int i = 0; i < 7; i++)
+                          BarChartGroupData(
+                            x: i,
+                            barRods: [
+                              BarChartRodData(
+                                toY: (activity[i] ?? 0).toDouble(),
+                                gradient: const LinearGradient(
+                                  colors: [AppColors.primary, AppColors.primary2],
+                                  begin: Alignment.bottomCenter,
+                                  end: Alignment.topCenter,
+                                ),
+                                width: 14,
+                                borderRadius: BorderRadius.circular(4),
+                                backDrawRodData: BackgroundBarChartRodData(
+                                  show: true,
+                                  toY: maxActivity > 0 ? (maxActivity * 1.25).ceilToDouble() : 5,
+                                  color: AppColors.border.withOpacity(0.3),
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
         const SizedBox(height: 20),
         // Grid des stats réelles
         if (loaded)
           GridView.count(
             crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
-            crossAxisSpacing: 10, mainAxisSpacing: 10, childAspectRatio: 1.6,
+            crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 1.35,
             children: stats.map((s) => Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border, width: 0.5)),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  Container(width: 30, height: 30, decoration: BoxDecoration(color: s.$4.withOpacity(0.12), borderRadius: BorderRadius.circular(8)),
-                    child: Icon(s.$1, size: 15, color: s.$4)),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.border, width: 0.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.03),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          color: s.$4.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(s.$1, size: 16, color: s.$4),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: s.$4.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '${(s.$5 * 100).round()}%',
+                          style: GoogleFonts.nunito(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: s.$4,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                   const Spacer(),
-                  Text('', style: GoogleFonts.nunito(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.success)),
-                ]),
-                const Spacer(),
-                Text(s.$2, style: GoogleFonts.nunito(fontSize: 22, fontWeight: FontWeight.w900, color: s.$4)),
-                Text(s.$3, style: GoogleFonts.nunito(fontSize: 11, color: AppColors.textSub)),
-                const SizedBox(height: 6),
-                ClipRRect(borderRadius: BorderRadius.circular(3),
-                  child: LinearProgressIndicator(value: s.$5.clamp(0.0, 1.0), minHeight: 4, backgroundColor: AppColors.border, valueColor: AlwaysStoppedAnimation(s.$4))),
-              ]),
+                  Text(
+                    s.$2,
+                    style: GoogleFonts.nunito(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.text,
+                    ),
+                  ),
+                  Text(
+                    s.$3,
+                    style: GoogleFonts.nunito(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textSub,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(3),
+                    child: LinearProgressIndicator(
+                      value: s.$5.clamp(0.0, 1.0),
+                      minHeight: 4,
+                      backgroundColor: AppColors.border,
+                      valueColor: AlwaysStoppedAnimation(s.$4),
+                    ),
+                  ),
+                ],
+              ),
             )).toList(),
           )
         else
@@ -366,7 +576,24 @@ class _UsersTabState extends State<_UsersTab> {
           const SizedBox(height: 20),
           
           // Users Grid
-          _SectionHeader('Liste des utilisateurs'),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _SectionHeader('Liste des utilisateurs'),
+              ElevatedButton.icon(
+                onPressed: () => _showAddUserDialog(context),
+                icon: const Icon(LucideIcons.userPlus, size: 14),
+                label: Text('Ajouter', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  minimumSize: const Size(0, 34),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 12),
           if (filteredUsers.isEmpty)
             Container(
@@ -451,6 +678,322 @@ class _UsersTabState extends State<_UsersTab> {
               },
             ),
         ],
+      ),
+    );
+  }
+
+  void _showAddUserDialog(BuildContext context) {
+    final formKey = GlobalKey<FormState>();
+    final firstNameCtrl = TextEditingController();
+    final lastNameCtrl = TextEditingController();
+    final emailCtrl = TextEditingController();
+    final passwordCtrl = TextEditingController();
+    app_user.UserRole selectedRole = app_user.UserRole.student;
+    app_user.SubscriptionType selectedSub = app_user.SubscriptionType.free;
+    bool loading = false;
+    String? errorMessage;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: EdgeInsets.only(
+            left: 24,
+            right: 24,
+            top: 24,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+          ),
+          child: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(LucideIcons.userPlus, color: AppColors.primary, size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Ajouter un utilisateur',
+                        style: GoogleFonts.inter(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.text,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(LucideIcons.x, size: 20),
+                        color: AppColors.textSub,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  
+                  // Prénom & Nom
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: firstNameCtrl,
+                          decoration: _inputDecoration('Prénom', LucideIcons.user),
+                          validator: (v) => v == null || v.isEmpty ? 'Requis' : null,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextFormField(
+                          controller: lastNameCtrl,
+                          decoration: _inputDecoration('Nom', LucideIcons.user),
+                          validator: (v) => v == null || v.isEmpty ? 'Requis' : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Email
+                  TextFormField(
+                    controller: emailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: _inputDecoration('Email', LucideIcons.mail),
+                    validator: (v) {
+                      if (v == null || v.isEmpty) return 'Requis';
+                      if (!v.contains('@')) return 'Format invalide';
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Mot de passe
+                  TextFormField(
+                    controller: passwordCtrl,
+                    obscureText: true,
+                    decoration: _inputDecoration('Mot de passe', LucideIcons.lock),
+                    validator: (v) => v == null || v.length < 6 ? 'Min. 6 caractères' : null,
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Rôle
+                  Text(
+                    'Rôle de l\'utilisateur',
+                    style: GoogleFonts.nunito(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textSub,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      for (final role in app_user.UserRole.values) ...[
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => setDialogState(() => selectedRole = role),
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 4),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              decoration: BoxDecoration(
+                                color: selectedRole == role ? AppColors.primary : Colors.white,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: selectedRole == role ? AppColors.primary : AppColors.border,
+                                  width: 1,
+                                ),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  role == app_user.UserRole.student
+                                      ? 'Élève'
+                                      : role == app_user.UserRole.teacher
+                                          ? 'Prof'
+                                          : role == app_user.UserRole.parent
+                                              ? 'Parent'
+                                              : 'Admin',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: selectedRole == role ? Colors.white : AppColors.text,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Abonnement (seulement si élève)
+                  if (selectedRole == app_user.UserRole.student) ...[
+                    Text(
+                      'Type d\'abonnement',
+                      style: GoogleFonts.nunito(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textSub,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        for (final sub in [app_user.SubscriptionType.free, app_user.SubscriptionType.premium]) ...[
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => setDialogState(() => selectedSub = sub),
+                              child: Container(
+                                margin: const EdgeInsets.symmetric(horizontal: 4),
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: selectedSub == sub ? AppColors.success : Colors.white,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: selectedSub == sub ? AppColors.success : AppColors.border,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    sub == app_user.SubscriptionType.free ? 'Gratuit' : 'Premium',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: selectedSub == sub ? Colors.white : AppColors.text,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+
+                  // Bouton de validation
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      onPressed: loading
+                          ? null
+                          : () async {
+                              if (!formKey.currentState!.validate()) return;
+                              setDialogState(() => loading = true);
+                              try {
+                                setDialogState(() => errorMessage = null);
+                                await context.read<AppState>().adminCreateUser(
+                                  email: emailCtrl.text.trim(),
+                                  password: passwordCtrl.text,
+                                  firstName: firstNameCtrl.text.trim(),
+                                  lastName: lastNameCtrl.text.trim(),
+                                  role: selectedRole,
+                                  subscription: selectedSub,
+                                );
+                                Navigator.pop(context);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Utilisateur ajouté avec succès !'),
+                                    backgroundColor: AppColors.success,
+                                  ),
+                                );
+                              } catch (e) {
+                                setDialogState(() {
+                                  errorMessage = e.toString().replaceAll('Exception:', '').trim();
+                                });
+                              } finally {
+                                setDialogState(() => loading = false);
+                              }
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: loading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : Text(
+                              'Créer l\'utilisateur',
+                              style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (errorMessage != null) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.redAccent.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(LucideIcons.alertTriangle, color: Colors.redAccent, size: 16),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              errorMessage!,
+                              style: GoogleFonts.nunito(
+                                color: Colors.redAccent,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration(String label, IconData icon) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: GoogleFonts.nunito(color: AppColors.textSub, fontSize: 13),
+      prefixIcon: Icon(icon, color: AppColors.textSub, size: 16),
+      filled: true,
+      fillColor: AppColors.border.withOpacity(0.1),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: AppColors.border.withOpacity(0.5), width: 0.5),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.primary, width: 1),
       ),
     );
   }
@@ -652,23 +1195,25 @@ class _CoursesTab extends StatefulWidget {
 
 class _CoursesTabState extends State<_CoursesTab> {
   int _selectedFiliere = 0;
+  int _selectedNiveau = 0;
   int _selectedSubject = 0;
   final Set<int> _expandedSemesters = {};
 
-  static const _filieres = [
-    'Tronc Commun',
-    '1ère Année Baccalauréat',
-    '2ème Année Baccalauréat',
+  final List<Color> _fallbackColors = [
+    AppColors.primary, AppColors.info, AppColors.success, 
+    AppColors.warning, AppColors.error, Colors.purple
   ];
 
-  static const _subjects = [
-    (icon: LucideIcons.calculator, label: 'Maths'),
-    (icon: LucideIcons.atom, label: 'Physique-Chimie'),
-    (icon: LucideIcons.microscope, label: 'Sciences Vie'),
-    (icon: LucideIcons.bookOpen, label: 'Français'),
-    (icon: LucideIcons.globe, label: 'Anglais'),
-    (icon: LucideIcons.history, label: 'Histoire-Géo'),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final s = context.read<AppState>();
+      if (!s.adminCoursesLoaded) s.loadAdminCourses();
+      if (!s.filieresLoaded) s.loadFilieres();
+      if (!s.matieresLoaded) s.loadMatieres();
+    });
+  }
 
   // Aliases: what teachers might store vs what the tab label says
   static const _subjectAliases = <String, List<String>>{
@@ -681,23 +1226,28 @@ class _CoursesTabState extends State<_CoursesTab> {
   };
 
   /// Builds semesters dynamically from real Supabase courses
-  List<Map<String, dynamic>> get _currentSemesters {
-    final filiere = _filieres[_selectedFiliere];
-    final subject = _subjects[_selectedSubject].label;
+  List<Map<String, dynamic>> _getCurrentSemesters(List<Map<String, dynamic>> niveaux, List<Map<String, dynamic>> matieres) {
+    if (niveaux.isEmpty || matieres.isEmpty) return [];
+
+    if (_selectedNiveau >= niveaux.length) _selectedNiveau = 0;
+    if (_selectedSubject >= matieres.length) _selectedSubject = 0;
+
+    final niveau = (niveaux[_selectedNiveau]['nom'] as String? ?? '').trim();
+    final subject = (matieres[_selectedSubject]['nom'] as String? ?? '').trim();
     final aliases = _subjectAliases[subject] ?? [subject];
 
     final allCourses = context.read<AppState>().adminCourses;
 
-    // Filter by selected filiere (flexible: null/empty = show in all) and subject (with aliases)
+    // Filter by selected niveau (flexible: null/empty = show in all) and subject (with aliases)
     final filtered = allCourses.where((c) {
       final courseFiliere = (c['filiere'] as String? ?? '').trim();
       final courseSubject = (c['subject'] as String? ?? '').trim();
-      // Filiere: match or ignore if empty
-      final filiereMatch = courseFiliere.isEmpty || courseFiliere == filiere;
-      // Subject: match with aliases (case-insensitive)
+      // Niveau Match
+      final niveauMatch = courseFiliere.isEmpty || courseFiliere == niveau || courseFiliere.contains(niveau) || niveau.contains(courseFiliere);
+      // Subject Match
       final subjectMatch = aliases.any((alias) =>
           courseSubject.toLowerCase() == alias.toLowerCase());
-      return filiereMatch && subjectMatch;
+      return niveauMatch && subjectMatch;
     }).toList();
 
     // Group into Semestre 1 and Semestre 2
@@ -741,6 +1291,47 @@ class _CoursesTabState extends State<_CoursesTab> {
 
   @override
   Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    final filieres = state.filieres;
+    final allMatieres = state.matieres;
+    final niveaux = state.niveaux;
+
+    if (!state.adminCoursesLoaded || !state.filieresLoaded || !state.matieresLoaded) {
+      return const Center(child: Padding(
+        padding: EdgeInsets.all(40),
+        child: CircularProgressIndicator(),
+      ));
+    }
+
+    if (filieres.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(40),
+          child: Text('Aucune filière disponible', style: GoogleFonts.inter(color: AppColors.textSub)),
+        ),
+      );
+    }
+
+    if (_selectedFiliere >= filieres.length) {
+      _selectedFiliere = 0;
+    }
+    
+    final selectedFiliereId = filieres[_selectedFiliere]['id']?.toString();
+    final niveauxForFiliere = niveaux.where((n) => n['filiere_id']?.toString() == selectedFiliereId).toList();
+    
+    if (_selectedNiveau >= niveauxForFiliere.length) {
+      _selectedNiveau = 0;
+    }
+
+    final selectedNiveauId = niveauxForFiliere.isNotEmpty ? niveauxForFiliere[_selectedNiveau]['id']?.toString() : null;
+    final matieres = allMatieres.where((m) => m['niveau_id']?.toString() == selectedNiveauId).toList();
+
+    if (_selectedSubject >= matieres.length) {
+      _selectedSubject = 0;
+    }
+
+    final currentSemesters = _getCurrentSemesters(niveauxForFiliere, matieres);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -761,13 +1352,17 @@ class _CoursesTabState extends State<_CoursesTab> {
         const SizedBox(height: 20),
 
         // ─── Filière tabs ───────────────────────────────────────────
-        _buildFiliereTabs(),
+        _buildFiliereTabs(filieres),
+        const SizedBox(height: 10),
+
+        // ─── Niveau tabs ────────────────────────────────────────────
+        _buildNiveauTabs(niveauxForFiliere),
         const SizedBox(height: 14),
 
         // ─── Subject chips ────────────────────────────────────────
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: _buildSubjectChips(),
+          child: _buildSubjectChips(matieres),
         ),
         const SizedBox(height: 24),
 
@@ -778,7 +1373,7 @@ class _CoursesTabState extends State<_CoursesTab> {
             children: [
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: _showAddCourseDialog,
+                  onPressed: () => _showAddCourseDialog(filieres, matieres),
                   icon: const Icon(LucideIcons.plus, size: 18),
                   label: Text('Ajouter un cours', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
                   style: ElevatedButton.styleFrom(
@@ -792,7 +1387,7 @@ class _CoursesTabState extends State<_CoursesTab> {
               const SizedBox(width: 12),
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: _showManageDialog,
+                  onPressed: () => _showManageDialog(filieres, matieres),
                   icon: const Icon(LucideIcons.settings, size: 18),
                   label: Text('Gérer', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
                   style: OutlinedButton.styleFrom(
@@ -810,10 +1405,10 @@ class _CoursesTabState extends State<_CoursesTab> {
         Expanded(
           child: ListView.separated(
             padding: const EdgeInsets.symmetric(horizontal: 16).copyWith(bottom: 32),
-            itemCount: _currentSemesters.length,
+            itemCount: currentSemesters.length,
             separatorBuilder: (_, __) => const SizedBox(height: 10),
             itemBuilder: (context, i) {
-              final sem = _currentSemesters[i];
+              final sem = currentSemesters[i];
               final expanded = _expandedSemesters.contains(i);
               final lessons = (sem['lessons'] as List).cast<String>();
               return _AdminSemesterSection(
@@ -832,16 +1427,19 @@ class _CoursesTabState extends State<_CoursesTab> {
     );
   }
 
-  Widget _buildFiliereTabs() {
+  Widget _buildFiliereTabs(List<Map<String, dynamic>> filieres) {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Row(
-        children: List.generate(_filieres.length, (i) {
+        children: List.generate(filieres.length, (i) {
           final active = i == _selectedFiliere;
+          final nom = filieres[i]['nom'] as String? ?? 'Filière';
           return GestureDetector(
             onTap: () => setState(() {
               _selectedFiliere = i;
+              _selectedNiveau = 0; // Reset niveau when filiere changes
+              _selectedSubject = 0;
               _expandedSemesters.clear();
             }),
             child: AnimatedContainer(
@@ -853,7 +1451,7 @@ class _CoursesTabState extends State<_CoursesTab> {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
-                _filieres[i],
+                nom,
                 style: GoogleFonts.inter(
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
@@ -867,13 +1465,58 @@ class _CoursesTabState extends State<_CoursesTab> {
     );
   }
 
-  Widget _buildSubjectChips() {
+  Widget _buildNiveauTabs(List<Map<String, dynamic>> niveaux) {
+    if (niveaux.isEmpty) return const SizedBox();
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+      child: Row(
+        children: List.generate(niveaux.length, (i) {
+          final active = i == _selectedNiveau;
+          final nom = niveaux[i]['nom'] as String? ?? 'Niveau';
+          return GestureDetector(
+            onTap: () => setState(() {
+              _selectedNiveau = i;
+              _selectedSubject = 0; // Reset subject when niveau changes
+              _expandedSemesters.clear();
+            }),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              decoration: BoxDecoration(
+                color: active ? AppColors.primary.withOpacity(0.1) : Colors.transparent,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: active ? AppColors.primary : AppColors.border,
+                  width: 1,
+                ),
+              ),
+              child: Text(
+                nom,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: active ? AppColors.primary : AppColors.textSub,
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _buildSubjectChips(List<Map<String, dynamic>> matieres) {
     return Wrap(
       spacing: 8,
       runSpacing: 8,
-      children: List.generate(_subjects.length, (i) {
+      children: List.generate(matieres.length, (i) {
         final active = i == _selectedSubject;
-        final subject = _subjects[i];
+        final matiere = matieres[i];
+        final label = matiere['nom'] as String? ?? 'Matière';
+        final subjectColor = _fallbackColors[i % _fallbackColors.length];
+
         return GestureDetector(
           onTap: () => setState(() {
             _selectedSubject = i;
@@ -883,21 +1526,21 @@ class _CoursesTabState extends State<_CoursesTab> {
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
-              color: active ? AppColors.primary : const Color(0xFFEEEEEE),
+              color: active ? subjectColor : const Color(0xFFEEEEEE),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: active ? AppColors.primary : const Color(0xFFDDDDDD),
+                color: active ? subjectColor : const Color(0xFFDDDDDD),
                 width: 0.5,
               ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(subject.icon, size: 16,
+                Icon(LucideIcons.bookOpen, size: 16,
                     color: active ? Colors.white : const Color(0xFF888888)),
                 const SizedBox(width: 7),
                 Text(
-                  subject.label,
+                  label,
                   style: GoogleFonts.inter(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
@@ -912,26 +1555,37 @@ class _CoursesTabState extends State<_CoursesTab> {
     );
   }
 
-  void _showAddCourseDialog() {
+  void _showAddCourseDialog(List<Map<String, dynamic>> filieres, List<Map<String, dynamic>> matieres) {
+    if (filieres.isEmpty || matieres.isEmpty) return;
+    
+    // Fallback if needed, but normally handled by states
+    final filiereName = (filieres[_selectedFiliere]['nom'] as String? ?? '').trim();
+    final subjectName = matieres.isNotEmpty ? (matieres[_selectedSubject]['nom'] as String? ?? '').trim() : '';
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => LessonUploadScreen(
-          filiere: _filieres[_selectedFiliere],
-          subject: _subjects[_selectedSubject].label,
+          filiere: filiereName, // You might actually want to pass the niveau here if lesson_upload_screen expects it
+          subject: subjectName,
           semester: 'Semestre 1',
         ),
       ),
     );
   }
 
-  void _showManageDialog() {
+  void _showManageDialog(List<Map<String, dynamic>> filieres, List<Map<String, dynamic>> matieres) {
+    if (filieres.isEmpty || matieres.isEmpty) return;
+    
+    final filiereName = (filieres[_selectedFiliere]['nom'] as String? ?? '').trim();
+    final subjectName = matieres.isNotEmpty ? (matieres[_selectedSubject]['nom'] as String? ?? '').trim() : '';
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => AdminCourseManagementScreen(
-          filiere: _filieres[_selectedFiliere],
-          subject: _subjects[_selectedSubject].label,
+          filiere: filiereName,
+          subject: subjectName,
         ),
       ),
     );
@@ -1157,7 +1811,7 @@ class _AdminRoleChip extends StatelessWidget {
 }
 
 class _SettingsTab extends StatelessWidget {
-  final User? user;
+  final app_user.User? user;
   const _SettingsTab({this.user});
 
   @override

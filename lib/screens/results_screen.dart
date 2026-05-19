@@ -11,7 +11,27 @@ class ResultsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final session = context.watch<AppState>().currentSession!;
+    final session = context.watch<AppState>().currentSession;
+    
+    if (session == null) {
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(LucideIcons.alertCircle, size: 48, color: AppColors.error),
+              const SizedBox(height: 16),
+              const Text('Session introuvable'),
+              ElevatedButton(
+                onPressed: () => Navigator.popUntil(context, (r) => r.isFirst),
+                child: const Text('Retour à l\'accueil'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    
     final score = session.scorePercent;
 
     return Scaffold(
@@ -33,27 +53,14 @@ class ResultsScreen extends StatelessWidget {
                       _buildCorrectionCard(
                           e.value, session.userAnswers[e.key], e.key)),
                   const SizedBox(height: 20),
-                  Row(children: [
-                    Expanded(
-                      child: SkwBtn(
-                        label: 'Rejouer',
-                        icon: LucideIcons.repeat,
-                        outlined: true,
-                        onTap: () {
-                          context.read<AppState>().startSession();
-                          Navigator.pushReplacementNamed(context, '/qcm');
-                        },
-                      ),
+                  SizedBox(
+                    width: double.infinity,
+                    child: SkwBtn(
+                      label: 'Exporter le résultat',
+                      icon: LucideIcons.download,
+                      onTap: () => _showExportSheet(context),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: SkwBtn(
-                        label: 'Exporter',
-                        icon: LucideIcons.download,
-                        onTap: () => _showExportSheet(context),
-                      ),
-                    ),
-                  ]),
+                  ),
                   const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,

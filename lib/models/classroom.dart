@@ -32,9 +32,10 @@ class Classroom {
   final DateTime createdAt;
   final DateTime? lastActivityAt;
   final bool isActive;
-  final String inviteCode;
+  final String? inviteCode;
   final int totalQsmCreated;
   final int totalStudents;
+  final String? classeScolaireId;
 
   const Classroom({
     required this.id,
@@ -52,6 +53,7 @@ class Classroom {
     required this.inviteCode,
     this.totalQsmCreated = 0,
     this.totalStudents = 0,
+    this.classeScolaireId,
   });
 
   factory Classroom.fromJson(Map<String, dynamic> json) {
@@ -79,6 +81,7 @@ class Classroom {
       inviteCode: json['inviteCode']?.toString() ?? '',
       totalQsmCreated: json['totalQsmCreated'] as int? ?? 0,
       totalStudents: json['totalStudents'] as int? ?? 0,
+      classeScolaireId: json['classe_scolaire_id']?.toString(),
     );
   }
 
@@ -99,6 +102,7 @@ class Classroom {
       'inviteCode': inviteCode,
       'totalQsmCreated': totalQsmCreated,
       'totalStudents': totalStudents,
+      'classe_scolaire_id': classeScolaireId,
     };
   }
 
@@ -158,6 +162,7 @@ class Classroom {
     String? inviteCode,
     int? totalQsmCreated,
     int? totalStudents,
+    String? classeScolaireId,
   }) {
     return Classroom(
       id: id ?? this.id,
@@ -175,6 +180,7 @@ class Classroom {
       inviteCode: inviteCode ?? this.inviteCode,
       totalQsmCreated: totalQsmCreated ?? this.totalQsmCreated,
       totalStudents: totalStudents ?? this.totalStudents,
+      classeScolaireId: classeScolaireId ?? this.classeScolaireId,
     );
   }
 }

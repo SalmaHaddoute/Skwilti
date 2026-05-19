@@ -79,13 +79,40 @@ class _QcmScreenState extends State<QcmScreen> {
     }
   }
 
-  void _finish() {
+  void _finish() async {
     _timer?.cancel();
-    context.read<AppState>().completeSession();
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const ResultsScreen()),
-    );
+    
+    // Afficher un indicateur de chargement pendant la sauvegarde
+    if (mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator(color: Colors.white)),
+      );
+    }
+
+    try {
+      await context.read<AppState>().completeSession();
+      if (mounted) {
+        Navigator.pop(context); // Fermer le dialog
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const ResultsScreen()),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Fermer le dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Erreur lors de la sauvegarde du score')),
+        );
+        // On continue quand même vers les résultats pour ne pas bloquer l'utilisateur
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const ResultsScreen()),
+        );
+      }
+    }
   }
 
   @override
@@ -112,22 +139,6 @@ class _QcmScreenState extends State<QcmScreen> {
                 ),
               ),
               const SizedBox(height: 20),
-              Text(
-                'Chargement du QSM...',
-                style: GoogleFonts.nunito(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.text,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Préparation des questions en cours',
-                style: GoogleFonts.nunito(
-                  fontSize: 14,
-                  color: AppColors.textSub,
-                ),
-              ),
               const SizedBox(height: 24),
               Container(
                 width: 200,

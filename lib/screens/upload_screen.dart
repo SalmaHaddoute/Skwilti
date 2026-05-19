@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
@@ -19,57 +20,37 @@ class UploadScreen extends StatefulWidget {
 }
 
 class _UploadScreenState extends State<UploadScreen> {
-  File? _selectedFile;
-  String? _fileName;
+  String? _selectedCourseId;
+  String? _selectedCourseTitle;
   int _nbQuestions = 10;
   String _difficulty = 'moyen';
   bool _isGenerating = false;
   double _progress = 0.0;
   String _progressStep = '';
   
-  // Variables pour la génération par prompt
-  final TextEditingController _promptController = TextEditingController();
-  bool _usePromptMode = false;
 
   final List<String> _difficulties = ['facile', 'moyen', 'difficile'];
 
-  Future<void> _pickFile() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png'],
-    );
-    if (result != null && result.files.isNotEmpty) {
-      final path = result.files.first.path;
-      if (path != null) {
-        setState(() {
-          _selectedFile = File(path);
-          _fileName = result.files.first.name;
-        });
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final state = context.read<AppState>();
+      if (!state.teacherCoursesLoaded) {
+        state.loadTeacherCourses();
       }
-    }
+    });
   }
 
   Future<void> _generate() async {
-    if (_usePromptMode) {
-      if (_promptController.text.trim().isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Veuillez entrer un prompt pour générer le QCM'),
-            backgroundColor: AppColors.error,
-          ),
-        );
-        return;
-      }
-    } else {
-      if (_selectedFile == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Veuillez d\'abord sélectionner un fichier'),
-            backgroundColor: AppColors.error,
-          ),
-        );
-        return;
-      }
+    if (_selectedCourseId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Veuillez sélectionner un cours existant'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
     }
 
     setState(() {
@@ -83,29 +64,25 @@ class _UploadScreenState extends State<UploadScreen> {
       
       // APRÈS — Appel du webhook avec WebhookService
       final result = await WebhookService().processPdfUpload(
-        title: _fileName?.replaceAll(RegExp(r'\.[^.]+$'), '') ?? 'Mon cours',
+        title: _selectedCourseTitle ?? 'Mon cours',
         teacherId: context.read<AppState>().currentUser?.id ?? '',
         nombreQuestions: _nbQuestions,
         difficulte: _difficulty,
         langue: 'Français',
-        existingFile: _selectedFile,
+        existingFile: null,
+        existingCourseId: _selectedCourseId,
       );
       
       if (result != null && result['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✅ QCM généré avec succès!'),
-            backgroundColor: AppColors.success,
-          ),
-        );
-        
-        // Naviguer vers le cours créé
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => const ReviewScreen(),
-          ),
-        );
+        if (mounted) {
+          context.read<AppState>().loadTeacherCourses();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ QCM généré avec succès!'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+        }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -122,31 +99,47 @@ class _UploadScreenState extends State<UploadScreen> {
         print('Keys: ${result.keys}');
         print('Success: ${result['success']}');
         if (result['success'] == true) {
-          final responseData = result['response'];
-          print('Questions: ${responseData['questions']}');
-          print('Resume: ${responseData['resume']}');
-          print('Mots clés: ${responseData['mots_cles']}');
-          print('=============================');
+          final dynamic rawResponse = result['response'];
+          final dynamic normalizedResponse = _normalizeWebhookResponse(rawResponse);
 
-          final questions = (responseData['questions'] as List?)
-              ?.map((q) => Question.fromJson(q as Map<String, dynamic>))
-              .toList() ?? [];
+          List<Question> questions = _extractQuestionsFromResponse(normalizedResponse);
+          final String summary = _extractSummaryFromResponse(normalizedResponse);
+          final List<String> keywords = _extractKeywordsFromResponse(normalizedResponse);
 
-          print('=== QUESTIONS CONVERTIES ===');
-          print('Nombre de questions: ${questions.length}');
-          for (int i = 0; i < questions.length; i++) {
-            print('Q${i+1}: ${questions[i].question}');
-            print('Options: ${questions[i].options}');
-            print('Correct: ${questions[i].correctIndex}');
+          if (questions.isEmpty) {
+            print('ℹ️ Aucune question valide trouvée dans la réponse webhook. Récupération depuis Supabase...');
+            final String? returnedCourseId = result['course_id'];
+            if (returnedCourseId != null) {
+              // Polling: n8n is generating questions asynchronously. We wait until they appear in Supabase.
+              for (int i = 0; i < 15; i++) {
+                if (mounted) {
+                  setState(() {
+                    _progressStep = 'Génération par l\'IA en cours... (${(i + 1) * 4}s)';
+                  });
+                }
+                await Future.delayed(const Duration(seconds: 4));
+                questions = await WebhookService().fetchQuestionsForCourse(returnedCourseId);
+                if (questions.isNotEmpty) {
+                  print('🟢 ${questions.length} questions trouvées après polling !');
+                  break;
+                }
+                print('⏳ Polling... aucune question trouvée (tentative ${i + 1}/15)');
+              }
+            }
           }
+
+          print('=== QUESTIONS RÉCUPÉRÉES ===');
+          print('Nombre: ${questions.length}');
+          print('Normalized response: $normalizedResponse');
           print('=============================');
 
           if (mounted) {
             context.read<AppState>().setQuestions(
               questions,
-              title: _fileName?.replaceAll(RegExp(r'\.[^.]+$'), '') ?? 'Mon cours',
-              summary: responseData['resume']?.toString() ?? '',
-              keywords: List<String>.from(responseData['mots_cles'] ?? []),
+              title: _selectedCourseTitle ?? 'Mon cours',
+              summary: summary,
+              keywords: keywords,
+              courseId: _selectedCourseId,
             );
 
             Navigator.push(
@@ -160,11 +153,11 @@ class _UploadScreenState extends State<UploadScreen> {
           print('❌ Erreur webhook: ${result['error']}');
         }
       }
-    } catch (e) {
+    } catch (e, stack) {
       print('=== ERREUR CAPTURÉE ===');
       print('Type: ${e.runtimeType}');
       print('Message: $e');
-      print('Stack trace: ${StackTrace.current}');
+      print('Stack trace: $stack');
       print('====================');
       
       if (mounted) {
@@ -197,6 +190,230 @@ class _UploadScreenState extends State<UploadScreen> {
     }
   }
 
+  Widget _buildExistingCoursesSection(AppState state) {
+    final courses = state.teacherCourses;
+    if (courses.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 20),
+        Text('Choisir un cours existant', style: GoogleFonts.nunito(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.text)),
+        const SizedBox(height: 10),
+        if (_selectedCourseId != null)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: AppColors.success.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.success.withOpacity(0.2)),
+            ),
+            child: Row(
+              children: [
+                const Icon(LucideIcons.checkCircle, color: AppColors.success, size: 18),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Cours sélectionné : ${_selectedCourseTitle ?? 'Cours existant'}',
+                    style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.success),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => setState(() {
+                    _selectedCourseId = null;
+                    _selectedCourseTitle = null;
+                  }),
+                  child: const Text('Annuler'),
+                ),
+              ],
+            ),
+          ),
+        const SizedBox(height: 10),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 2))],
+          ),
+          child: Column(
+            children: courses.map((course) {
+              final id = course['id']?.toString();
+              final isSelected = id != null && id == _selectedCourseId;
+              return InkWell(
+                onTap: () {
+                  if (id == null) return;
+                  setState(() {
+                    _selectedCourseId = id;
+                    _selectedCourseTitle = course['title']?.toString();
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    border: Border(bottom: BorderSide(color: AppColors.border, width: 0.5)),
+                    color: isSelected ? AppColors.primary.withOpacity(0.08) : Colors.white,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(course['title']?.toString() ?? 'Sans titre', style: GoogleFonts.nunito(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${course['subject'] ?? 'Général'} · ${course['question_count'] ?? 0} questions',
+                              style: GoogleFonts.nunito(fontSize: 12, color: AppColors.textSub),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        isSelected ? LucideIcons.checkCircle : LucideIcons.circle,
+                        color: isSelected ? AppColors.primary : AppColors.textSub,
+                        size: 18,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  dynamic _normalizeWebhookResponse(dynamic input) {
+    if (input == null) return null;
+    if (input is String) {
+      final trimmed = input.trim();
+      if (trimmed.isEmpty) return null;
+      try {
+        return _normalizeWebhookResponse(jsonDecode(trimmed));
+      } catch (_) {
+        return trimmed;
+      }
+    }
+    if (input is List) {
+      return input.map(_normalizeWebhookResponse).toList();
+    }
+    if (input is Map) {
+      final normalized = <String, dynamic>{};
+      for (final entry in input.entries) {
+        normalized[entry.key] = _normalizeWebhookResponse(entry.value);
+      }
+      return normalized;
+    }
+    return input;
+  }
+
+  List<Question> _extractQuestionsFromResponse(dynamic response) {
+    if (response == null) return [];
+
+    if (response is List) {
+      // If the list is already a list of question maps
+      final directQuestions = response
+          .whereType<Map>()
+          .where((item) => item.containsKey('question') || item.containsKey('text') || item.containsKey('options'))
+          .map((item) => Question.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+      if (directQuestions.isNotEmpty) return directQuestions;
+
+      // If the list contains a single container map with questions
+      if (response.length == 1 && response.first is Map) {
+        return _extractQuestionsFromResponse(response.first);
+      }
+
+      // Try flattening nested lists
+      for (final element in response) {
+        final nested = _extractQuestionsFromResponse(element);
+        if (nested.isNotEmpty) return nested;
+      }
+      return [];
+    }
+
+    if (response is Map) {
+      if (response.containsKey('questions')) {
+        return _extractQuestionsFromResponse(response['questions']);
+      }
+
+      if (response.containsKey('data')) {
+        return _extractQuestionsFromResponse(response['data']);
+      }
+
+      if (response.containsKey('output')) {
+        return _extractQuestionsFromResponse(response['output']);
+      }
+
+      if (response.containsKey('result')) {
+        return _extractQuestionsFromResponse(response['result']);
+      }
+
+      if (response.containsKey('body')) {
+        return _extractQuestionsFromResponse(response['body']);
+      }
+
+      if (response.containsKey('question') || response.containsKey('text') || response.containsKey('options')) {
+        return [Question.fromJson(Map<String, dynamic>.from(response))];
+      }
+
+      for (final value in response.values) {
+        final nested = _extractQuestionsFromResponse(value);
+        if (nested.isNotEmpty) return nested;
+      }
+      return [];
+    }
+
+    return [];
+  }
+
+  String _extractSummaryFromResponse(dynamic response) {
+    if (response is Map) {
+      final summaryKeys = ['resume', 'résumé', 'summary', 'description'];
+      for (final key in summaryKeys) {
+        if (response.containsKey(key) && response[key] != null) {
+          return response[key].toString();
+        }
+      }
+      for (final value in response.values) {
+        final nested = _extractSummaryFromResponse(value);
+        if (nested.isNotEmpty) return nested;
+      }
+    }
+    if (response is List) {
+      for (final item in response) {
+        final nested = _extractSummaryFromResponse(item);
+        if (nested.isNotEmpty) return nested;
+      }
+    }
+    return '';
+  }
+
+  List<String> _extractKeywordsFromResponse(dynamic response) {
+    if (response is Map) {
+      final keywordKeys = ['keywords', 'mots_cles', 'mots_clés', 'tags'];
+      for (final key in keywordKeys) {
+        if (response.containsKey(key) && response[key] != null) {
+          final value = response[key];
+          if (value is List) return value.map((e) => e.toString()).toList();
+          if (value is String) return value.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+        }
+      }
+      for (final value in response.values) {
+        final nested = _extractKeywordsFromResponse(value);
+        if (nested.isNotEmpty) return nested;
+      }
+    }
+    if (response is List) {
+      for (final item in response) {
+        final nested = _extractKeywordsFromResponse(item);
+        if (nested.isNotEmpty) return nested;
+      }
+    }
+    return [];
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -225,22 +442,11 @@ class _UploadScreenState extends State<UploadScreen> {
             if (_isGenerating)
               _buildLoadingCard()
             else ...[
-              _buildModeSelector(),
-              const SizedBox(height: 20),
-              if (_usePromptMode) ...[
-                _buildPromptSection(),
-                const SizedBox(height: 20),
-              ] else ...[
-                _buildUploadHero(),
-                const SizedBox(height: 20),
-                if (_selectedFile != null) ...[
-                  _buildFilePreview(),
-                  const SizedBox(height: 20),
-                ],
-              ],
-              _buildConfigCard(),
-              const SizedBox(height: 30),
-              _buildGenerateButton(),
+            _buildExistingCoursesSection(context.watch<AppState>()),
+            const SizedBox(height: 20),
+            _buildConfigCard(),
+            const SizedBox(height: 30),
+            _buildGenerateButton(),
             ],
           ],
         ),
@@ -285,109 +491,7 @@ class _UploadScreenState extends State<UploadScreen> {
     );
   }
 
-  Widget _buildUploadHero() {
-    return GestureDetector(
-      onTap: _pickFile,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: AppColors.primary,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.primary),
-        ),
-        child: Column(
-          children: [
-            Icon(
-              LucideIcons.upload,
-              size: 48,
-              color: Colors.white,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Importer votre cours',
-              style: GoogleFonts.nunito(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'PDF, Word, Image, TXT',
-              style: GoogleFonts.nunito(
-                fontSize: 12,
-                color: Colors.white.withOpacity(0.8),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
-  Widget _buildFilePreview() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border, width: 0.5),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: AppColors.primary,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(
-              LucideIcons.fileText,
-              size: 20,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _fileName ?? '',
-                  style: GoogleFonts.nunito(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.text,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  'Prêt à analyser',
-                  style: GoogleFonts.nunito(
-                    fontSize: 11,
-                    color: AppColors.success,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          GestureDetector(
-            onTap: () => setState(() {
-              _selectedFile = null;
-              _fileName = null;
-            }),
-            child: Icon(
-              LucideIcons.x,
-              size: 20,
-              color: AppColors.textSub,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildConfigCard() {
     return SkwCard(
@@ -548,7 +652,7 @@ class _UploadScreenState extends State<UploadScreen> {
                 size: 26, color: AppColors.primary),
           ),
           const SizedBox(height: 12),
-          Text(_fileName ?? 'Document',
+          Text(_selectedCourseTitle ?? 'Cours',
               style: const TextStyle(
                   fontSize: 14, fontWeight: FontWeight.w700)),
           const SizedBox(height: 4),
@@ -621,185 +725,6 @@ class _UploadScreenState extends State<UploadScreen> {
     );
   }
 
-  Widget _buildModeSelector() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border, width: 0.5),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Mode de génération',
-            style: GoogleFonts.nunito(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: AppColors.text,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => setState(() => _usePromptMode = false),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: !_usePromptMode ? AppColors.primary : AppColors.background,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: !_usePromptMode ? AppColors.primary : AppColors.border,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          LucideIcons.fileText,
-                          size: 20,
-                          color: !_usePromptMode ? Colors.white : AppColors.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Fichier',
-                          style: GoogleFonts.nunito(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: !_usePromptMode ? Colors.white : AppColors.text,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => setState(() => _usePromptMode = true),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: _usePromptMode ? AppColors.primary : AppColors.background,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: _usePromptMode ? AppColors.primary : AppColors.border,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          LucideIcons.edit3,
-                          size: 20,
-                          color: _usePromptMode ? Colors.white : AppColors.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Prompt',
-                          style: GoogleFonts.nunito(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: _usePromptMode ? Colors.white : AppColors.text,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
 
-  Widget _buildPromptSection() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border, width: 0.5),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Décrire le contenu',
-            style: GoogleFonts.nunito(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: AppColors.text,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Soyez précis pour de meilleurs résultats',
-            style: GoogleFonts.nunito(
-              fontSize: 12,
-              color: AppColors.textSub,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            decoration: BoxDecoration(
-              color: AppColors.background,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: TextField(
-              controller: _promptController,
-              maxLines: 4,
-              style: GoogleFonts.nunito(
-                fontSize: 13,
-                color: AppColors.text,
-              ),
-              decoration: InputDecoration(
-                hintText: 'Ex: 10 questions sur la révolution française...',
-                hintStyle: GoogleFonts.nunito(
-                  fontSize: 12,
-                  color: AppColors.textSub,
-                ),
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.all(12),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              'Histoire', 'Sciences', 'Maths', 'Littérature'
-            ].map((subject) {
-              return GestureDetector(
-                onTap: () {
-                  _promptController.text = 'Créez des questions sur $subject';
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    subject,
-                    style: GoogleFonts.nunito(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-          ],
-        ),
-    );
-  }
+
 }

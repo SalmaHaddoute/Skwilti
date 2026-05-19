@@ -19,247 +19,419 @@ class ProfileScreen extends StatelessWidget {
     if (user == null) return const SizedBox.shrink();
     final roleColor = _roleColor(user.role);
     final initials = '${user.firstName.isNotEmpty ? user.firstName[0] : ''}${user.lastName.isNotEmpty ? user.lastName[0] : ''}'.toUpperCase();
+    final isPremium = user.subscription == SubscriptionType.premium;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: const Color(0xFFF8F9FD),
       appBar: AppBar(
-        title: Text('Mon profil', style: GoogleFonts.nunito(fontWeight: FontWeight.w800)),
-        backgroundColor: Colors.white,
+        title: Text(
+          'Mon profil',
+          style: GoogleFonts.inter(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: AppColors.text,
+          ),
+        ),
+        backgroundColor: Colors.transparent,
         elevation: 0,
-        foregroundColor: AppColors.text,
+        leading: IconButton(
+          icon: const Icon(LucideIcons.arrowLeft, color: AppColors.text),
+          onPressed: () => Navigator.pop(context),
+        ),
         centerTitle: false,
       ),
       body: SingleChildScrollView(
-        child: Column(children: [
-          // Header
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(0, 0, 0, 30),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: const Border(bottom: BorderSide(color: AppColors.border, width: 0.5)),
-            ),
-            child: Column(children: [
-              const SizedBox(height: 20),
-              // Avatar
-              Container(
-                width: 88, height: 88,
-                decoration: BoxDecoration(
-                  color: roleColor,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 4),
-                  boxShadow: [BoxShadow(color: roleColor.withOpacity(0.35), blurRadius: 16, offset: const Offset(0, 6))],
-                ),
-                child: ClipOval(
-                  child: Image.asset(
-                    'assets/images/teacher-illustration.webp',
-                    width: 88,
-                    height: 88,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Center(
-                        child: Text(
-                          initials,
-                          style: GoogleFonts.nunito(
-                            fontSize: 32,
-                            fontWeight: FontWeight.w900,
-                            color: Colors.white,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              Text(user.fullName, style: GoogleFonts.nunito(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text)),
-              const SizedBox(height: 4),
-              Text(user.email, style: GoogleFonts.nunito(fontSize: 13, color: AppColors.textSecondary)),
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-                decoration: BoxDecoration(color: roleColor.withOpacity(0.12), borderRadius: BorderRadius.circular(20)),
-                child: Text(_roleLabel(user.role), style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w800, color: roleColor)),
-              ),
-            ]),
-          ),
-          // Status
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.border, width: 0.5),
-              ),
-              child: Row(
+        child: Column(
+          children: [
+            // ── Header Profile Info ──────────────────────────────────
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.only(bottom: 24),
+              child: Column(
                 children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: AppColors.green.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(
-                      LucideIcons.crown,
-                      size: 20,
-                      color: AppColors.green,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Plan actuel',
-                          style: GoogleFonts.nunito(
-                            fontSize: 12,
-                            color: AppColors.textSub,
-                            fontWeight: FontWeight.w600,
+                  const SizedBox(height: 12),
+                  // Avatar with Premium Ring
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      if (isPremium)
+                        Container(
+                          width: 104,
+                          height: 104,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(
+                              colors: [Colors.amber, Colors.orange, Colors.yellow],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 2),
+                      Container(
+                        width: 96,
+                        height: 96,
+                        decoration: BoxDecoration(
+                          color: roleColor,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 3),
+                          boxShadow: [
+                            BoxShadow(
+                              color: roleColor.withOpacity(0.2),
+                              blurRadius: 16,
+                              offset: const Offset(0, 8),
+                            )
+                          ],
+                        ),
+                        child: ClipOval(
+                          child: Image.asset(
+                            'assets/images/teacher-illustration.webp',
+                            width: 96,
+                            height: 96,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Center(
+                                child: Text(
+                                  initials,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                      if (isPremium)
+                        Positioned(
+                          bottom: 0,
+                          right: 4,
+                          child: Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: const BoxDecoration(
+                              color: Colors.amber,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black12,
+                                  blurRadius: 4,
+                                  offset: Offset(0, 2),
+                                )
+                              ],
+                            ),
+                            child: const Icon(
+                              LucideIcons.crown,
+                              size: 14,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Full Name
+                  Text(
+                    user.fullName,
+                    style: GoogleFonts.inter(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.text,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  
+                  // Email
+                  Text(
+                    user.email,
+                    style: GoogleFonts.nunito(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textSub,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  
+                  // Role Badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: roleColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: roleColor,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
                         Text(
-                          user.subscription.name.toUpperCase(),
-                          style: GoogleFonts.nunito(
-                            fontSize: 16,
+                          _roleLabel(user.role),
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
                             fontWeight: FontWeight.w800,
-                            color: AppColors.green,
+                            color: roleColor,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: user.subscription == SubscriptionType.premium 
-                          ? AppColors.warning.withOpacity(0.1)
-                          : AppColors.green.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      user.subscription == SubscriptionType.premium ? 'PREMIUM' : 'GRATUIT',
-                      style: GoogleFonts.nunito(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: user.subscription == SubscriptionType.premium 
-                            ? AppColors.warning
-                            : AppColors.green,
+                ],
+              ),
+            ),
+
+            // ── Premium Status Banner ────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: isPremium
+                      ? const LinearGradient(
+                          colors: [Color(0xFF1E3C72), Color(0xFF2A5298)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        )
+                      : LinearGradient(
+                          colors: [AppColors.primary, AppColors.primary2],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: (isPremium ? const Color(0xFF1E3C72) : AppColors.primary).withOpacity(0.25),
+                      blurRadius: 16,
+                      offset: const Offset(0, 8),
+                    )
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(14),
                       ),
+                      child: Icon(
+                        isPremium ? LucideIcons.crown : LucideIcons.zap,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            isPremium ? 'Membre Premium' : 'Formule Gratuite',
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            isPremium 
+                                ? 'Accès illimité débloqué' 
+                                : 'Passez au niveau supérieur',
+                            style: GoogleFonts.nunito(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white.withOpacity(0.85),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (!isPremium)
+                      ElevatedButton(
+                        onPressed: () {
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const PremiumScreen()));
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: AppColors.primary,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        child: Text(
+                          'Activer',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.amber.withOpacity(0.5), width: 0.5),
+                        ),
+                        child: Text(
+                          'ACTIF',
+                          style: GoogleFonts.inter(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.amber,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 28),
+
+            // ── Menu Options ──────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                children: [
+                  _buildMenuItem(
+                    icon: LucideIcons.user,
+                    label: 'Modifier le profil',
+                    color: AppColors.primary,
+                    onTap: () {
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const EditProfileScreen()));
+                    },
+                  ),
+                  if (!isPremium)
+                    _buildMenuItem(
+                      icon: LucideIcons.award,
+                      label: 'Passer à Premium',
+                      color: AppColors.warning,
+                      onTap: () {
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => const PremiumScreen()));
+                      },
+                    ),
+                  _buildMenuItem(
+                    icon: LucideIcons.messageSquare,
+                    label: 'Déposer une réclamation',
+                    color: AppColors.error,
+                    onTap: () {
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const ComplaintScreen()));
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  // Log Out
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.02),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        )
+                      ],
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      leading: Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(LucideIcons.logOut, size: 17, color: Colors.red.shade600),
+                      ),
+                      title: Text(
+                        'Se déconnecter',
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.red.shade600,
+                        ),
+                      ),
+                      trailing: Icon(LucideIcons.chevronRight, size: 16, color: Colors.red.shade300),
+                      onTap: () async {
+                        await context.read<AppState>().logout();
+                        if (context.mounted) Navigator.pop(context);
+                      },
                     ),
                   ),
                 ],
               ),
             ),
-          ),
-          // Menu items
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(children: [
-              _MenuItem(LucideIcons.user, 'Modifier le profil', AppColors.primary, () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const EditProfileScreen()));
-              }),
-              _MenuItem(LucideIcons.bell, 'Notifications', AppColors.info, () {}),
-              _MenuItem(LucideIcons.award, 'Passer à Premium', AppColors.warning, () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const PremiumScreen()));
-              }),
-              _MenuItem(LucideIcons.settings, 'Paramètres n8n', AppColors.textSub, () => _showN8nDialog(context)),
-              _MenuItem(LucideIcons.messageSquare, 'Déposer une réclamation', AppColors.error, () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const ComplaintScreen()));
-              }),
-              _MenuItem(LucideIcons.logOut, 'Se déconnecter', AppColors.error,
-                () async { await context.read<AppState>().logout(); if (context.mounted) Navigator.pop(context); }),
-            ]),
-          ),
-          const SizedBox(height: 32),
-          const SkwiltiLogo(height: 24),
-          const SizedBox(height: 8),
-          Text('v1.0.0', style: GoogleFonts.nunito(fontSize: 11, color: AppColors.textSub)),
-          const SizedBox(height: 24),
-        ]),
-      ),
-    );
-  }
-
-  void _showN8nDialog(BuildContext context) {
-    final ctrl = TextEditingController(text: context.read<AppState>().n8nUrl);
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text('URL n8n', style: GoogleFonts.nunito(fontWeight: FontWeight.w800)),
-        content: TextField(
-          controller: ctrl,
-          decoration: const InputDecoration(labelText: 'Webhook URL', prefixIcon: Icon(LucideIcons.link, size: 16)),
-          style: GoogleFonts.nunito(fontSize: 13),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler')),
-          ElevatedButton(
-            onPressed: () { context.read<AppState>().setN8nUrl(ctrl.text.trim()); Navigator.pop(context); },
-            child: const Text('Sauvegarder'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showSupportDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text('Aide & Support', style: GoogleFonts.nunito(fontWeight: FontWeight.w800)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Comment pouvons-nous vous aider ?', style: GoogleFonts.nunito(fontSize: 14, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 16),
-            _SupportOption(
-              icon: LucideIcons.crown,
-              title: 'Passer au Premium',
-              description: 'Débloquez toutes les fonctionnalités premium',
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const PremiumScreen()));
-              },
+            
+            const SizedBox(height: 40),
+            const SkwiltiLogo(height: 24),
+            const SizedBox(height: 8),
+            Text(
+              'Version 1.0.0',
+              style: GoogleFonts.nunito(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textSub,
+              ),
             ),
-            const SizedBox(height: 12),
-            _SupportOption(
-              icon: LucideIcons.messageSquare,
-              title: 'Déposer une réclamation',
-              description: 'Contactez notre équipe d\'administration',
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const ComplaintScreen()));
-              },
-            ),
-            const SizedBox(height: 12),
-            _SupportOption(
-              icon: LucideIcons.mail,
-              title: 'Contacter le support',
-              description: 'support@skwilti.com',
-              onTap: () {
-                // Ouvrir le client email
-              },
-            ),
-            const SizedBox(height: 12),
-            _SupportOption(
-              icon: LucideIcons.bookOpen,
-              title: 'Centre d\'aide',
-              description: 'Consultez notre documentation',
-              onTap: () {
-                // Ouvrir la documentation
-              },
-            ),
+            const SizedBox(height: 32),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fermer')),
+      ),
+    );
+  }
+
+  Widget _buildMenuItem({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          )
         ],
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        leading: Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, size: 17, color: color),
+        ),
+        title: Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: AppColors.text,
+          ),
+        ),
+        trailing: const Icon(LucideIcons.chevronRight, size: 16, color: AppColors.textSub),
+        onTap: onTap,
       ),
     );
   }
@@ -281,112 +453,4 @@ class ProfileScreen extends StatelessWidget {
       case UserRole.admin:   return 'Administrateur';
     }
   }
-}
-
-class _SupportOption extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String description;
-  final VoidCallback onTap;
-  
-  const _SupportOption({
-    required this.icon,
-    required this.title,
-    required this.description,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.border, width: 0.5),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                icon,
-                size: 20,
-                color: AppColors.primary,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: GoogleFonts.nunito(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.text,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    description,
-                    style: GoogleFonts.nunito(
-                      fontSize: 12,
-                      color: AppColors.textSub,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(
-              LucideIcons.chevronRight,
-              size: 16,
-              color: AppColors.textSub,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StatBox extends StatelessWidget {
-  final String v, l; final Color c;
-  const _StatBox(this.v, this.l, this.c);
-  @override
-  Widget build(BuildContext context) => Expanded(child: Container(
-    padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border, width: 0.5)),
-    child: Column(children: [
-      Text(v, style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w900, color: c)),
-      const SizedBox(height: 2),
-      Text(l, style: GoogleFonts.nunito(fontSize: 10, color: AppColors.textSub, fontWeight: FontWeight.w600)),
-    ]),
-  ));
-}
-
-class _MenuItem extends StatelessWidget {
-  final IconData icon; final String label; final Color color; final VoidCallback onTap;
-  const _MenuItem(this.icon, this.label, this.color, this.onTap);
-  @override
-  Widget build(BuildContext context) => Container(
-    margin: const EdgeInsets.only(bottom: 8),
-    child: ListTile(
-      leading: Container(width: 36, height: 36, decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
-        child: Icon(icon, size: 17, color: color)),
-      title: Text(label, style: GoogleFonts.nunito(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)),
-      trailing: const Icon(LucideIcons.chevronRight, size: 16, color: AppColors.textSub),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppColors.border, width: 0.5)),
-      tileColor: Colors.white,
-      onTap: onTap,
-    ),
-  );
 }

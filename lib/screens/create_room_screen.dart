@@ -26,6 +26,14 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
   int? _timerMinutes;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<AppState>().loadAllClassrooms();
+    });
+  }
+
+  @override
   void dispose() {
     _nameController.dispose();
     _timerController.dispose();
@@ -34,6 +42,7 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
   }
 
   Future<void> _createRoom() async {
+    print('🟣 [UI] _createRoom button pressed');
     if (!_formKey.currentState!.validate() || _selectedClassroom == null) {
       if (_selectedClassroom == null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -58,6 +67,7 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
       await context.read<AppState>().createRoom(
         name: _nameController.text.trim(),
         classroomId: _selectedClassroom!.id,
+        schoolClassId: _selectedClassroom!.classeScolaireId,
         qcmSessionId: currentSession.id,
         timerMinutes: _timerMinutes,
         maxParticipants: int.tryParse(_maxParticipantsController.text) ?? 50,
@@ -89,8 +99,11 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final classrooms = context.watch<AppState>().userClassrooms;
-    final currentSession = context.watch<AppState>().currentSession;
+    final state = context.watch<AppState>();
+    final currentSession = state.currentSession;
+    print('DEBUG: [CreateRoomScreen] build - currentSession: ${currentSession?.id}');
+    final classrooms = state.allClassrooms;
+    final quizzes = state.teacherCourses.where((c) => (c['question_count'] ?? 0) > 0).toList();
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -120,213 +133,162 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
               // Current QCM info
               if (currentSession != null)
                 Container(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.border, width: 0.5),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'QCM sélectionné',
-                        style: GoogleFonts.inter(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.text,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [AppColors.success.withOpacity(0.1), AppColors.success.withOpacity(0.05)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: AppColors.success.withOpacity(0.3)),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(LucideIcons.checkCircle, color: AppColors.success, size: 20),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                currentSession.courseTitle,
-                                style: GoogleFonts.nunito(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.text,
-                                ),
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [AppColors.success, AppColors.success.withOpacity(0.8)],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                '${currentSession.questions.length} Q',
-                                style: GoogleFonts.nunito(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 2)),
                     ],
-                  ),
-                ),
-              if (currentSession == null)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.border),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
-                          Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              color: AppColors.warning,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(
-                              LucideIcons.alertTriangle,
-                              color: Colors.white,
-                              size: 16,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
+                          const Icon(LucideIcons.fileText, color: AppColors.primary, size: 20),
+                          const SizedBox(width: 10),
                           Text(
-                            'Aucun QCM disponible',
-                            style: GoogleFonts.nunito(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.text,
-                            ),
+                            'QCM sélectionné',
+                            style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text),
                           ),
                         ],
                       ),
                       const SizedBox(height: 12),
                       Container(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         decoration: BoxDecoration(
-                          color: AppColors.warning.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: AppColors.warning.withOpacity(0.3)),
+                          color: AppColors.primary.withOpacity(0.06),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                         child: Row(
                           children: [
-                            const Icon(LucideIcons.info, color: AppColors.warning, size: 20),
-                            const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                'Veuillez d\'abord créer un QCM depuis l\'écran d\'upload',
-                                style: GoogleFonts.nunito(
-                                  fontSize: 12,
-                                  color: AppColors.text,
-                                ),
+                                currentSession.courseTitle,
+                                style: GoogleFonts.nunito(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.primaryDark),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(20)),
+                              child: Text(
+                                '${currentSession.questions.length} questions',
+                                style: GoogleFonts.nunito(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white),
                               ),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 44,
-                        child: ElevatedButton(
-                          onPressed: () {
-                            Navigator.pop(context);
-                            // Navigate to upload screen
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.warning,
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: Text(
-                            'Créer un QCM',
-                            style: GoogleFonts.nunito(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
+              if (currentSession == null) ...[
+                if (quizzes.isNotEmpty) ...[
+                  Text(
+                    'Sélectionnez un QSM existant',
+                    style: GoogleFonts.nunito(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.text),
+                  ),
+                  const SizedBox(height: 14),
+                  ...quizzes.map((quiz) => Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 2)),
+                      ],
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      leading: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                        child: const Icon(LucideIcons.fileText, color: AppColors.primary, size: 20),
+                      ),
+                      title: Text(
+                        quiz['title'] ?? 'QSM sans titre',
+                        style: GoogleFonts.nunito(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text),
+                      ),
+                      subtitle: Text(
+                        '${quiz['subject'] ?? 'Général'} · ${quiz['question_count']} questions',
+                        style: GoogleFonts.nunito(fontSize: 12, color: AppColors.textSub, fontWeight: FontWeight.w600),
+                      ),
+                      trailing: const Icon(LucideIcons.chevronRight, color: AppColors.textSub, size: 18),
+                      onTap: () async {
+                        await context.read<AppState>().loadQcmForCourse(
+                          quiz['id'] as String,
+                          quiz['title'] as String? ?? 'Sans titre',
+                        );
+                      },
+                    ),
+                  )),
+                ] else
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 2))],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 56, height: 56,
+                          decoration: BoxDecoration(color: AppColors.warning.withOpacity(0.1), shape: BoxShape.circle),
+                          child: const Icon(LucideIcons.alertTriangle, color: AppColors.warning, size: 28),
+                        ),
+                        const SizedBox(height: 16),
+                        Text('Aucun QCM disponible', style: GoogleFonts.nunito(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.text)),
+                        const SizedBox(height: 8),
+                        Text('Créez d\'abord un QCM depuis l\'écran de création avant de lancer une Room.', textAlign: TextAlign.center, style: GoogleFonts.nunito(fontSize: 13, color: AppColors.textSub)),
+                        const SizedBox(height: 20),
+                        ElevatedButton(
+                          onPressed: () => Navigator.pop(context),
+                          style: ElevatedButton.styleFrom(backgroundColor: AppColors.warning, foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                          child: Text('Retour', style: GoogleFonts.nunito(fontSize: 15, fontWeight: FontWeight.w700)),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
               const SizedBox(height: 24),
 
               // Room info
               Container(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.border, width: 0.5),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 2))],
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Informations de la room',
-                      style: GoogleFonts.inter(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.text,
-                      ),
+                    Row(
+                      children: [
+                        const Icon(LucideIcons.tag, color: AppColors.primary, size: 20),
+                        const SizedBox(width: 10),
+                        Text('Informations de la room', style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text)),
+                      ],
                     ),
                     const SizedBox(height: 16),
-                    
-                    // Name
                     TextFormField(
                       controller: _nameController,
-                      style: GoogleFonts.nunito(fontSize: 14),
+                      style: GoogleFonts.nunito(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.text),
                       decoration: InputDecoration(
                         labelText: 'Nom de la room *',
-                        labelStyle: GoogleFonts.nunito(fontSize: 12, color: AppColors.textSub),
-                        prefixIcon: const Icon(LucideIcons.tag, color: AppColors.primary, size: 20),
+                        labelStyle: GoogleFonts.nunito(fontSize: 13, color: AppColors.textSub, fontWeight: FontWeight.w600),
                         hintText: 'Ex: QCM Mathématiques - Test 1',
-                        hintStyle: GoogleFonts.nunito(fontSize: 13, color: AppColors.textSub),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: AppColors.border),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: AppColors.primary),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        hintStyle: GoogleFonts.nunito(fontSize: 14, color: AppColors.textSub.withOpacity(0.6)),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.border)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
+                        filled: true,
+                        fillColor: AppColors.background.withOpacity(0.5),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                       ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Veuillez entrer le nom de la room';
-                        }
-                        return null;
-                      },
+                      validator: (value) => (value == null || value.trim().isEmpty) ? 'Veuillez entrer le nom de la room' : null,
                     ),
                   ],
                 ),
@@ -335,135 +297,52 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
 
               // Classroom selection
               Container(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.border),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.success.withOpacity(0.1),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 2))],
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [AppColors.success, AppColors.success.withOpacity(0.8)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(
-                            LucideIcons.users,
-                            color: Colors.white,
-                            size: 16,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          'Classe concernée',
-                          style: GoogleFonts.nunito(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.text,
-                          ),
-                        ),
+                        const Icon(LucideIcons.users, color: AppColors.success, size: 20),
+                        const SizedBox(width: 10),
+                        Text('Classe concernée', style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text)),
                       ],
                     ),
                     const SizedBox(height: 16),
-                    if (classrooms.isEmpty)
+                    if (!state.allClassroomsLoaded)
+                      const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()))
+                    else if (classrooms.isEmpty)
                       Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppColors.background,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: AppColors.textSub.withOpacity(0.3)),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(LucideIcons.inbox, color: AppColors.textSub, size: 20),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Aucune classe disponible',
-                              style: GoogleFonts.nunito(
-                                fontSize: 12,
-                                color: AppColors.textSub,
-                              ),
-                            ),
-                          ],
-                        ),
+                        padding: const EdgeInsets.all(16),
+                        alignment: Alignment.center,
+                        child: Text('Aucune classe disponible', style: GoogleFonts.nunito(fontSize: 14, color: AppColors.textSub)),
                       )
                     else
                       ...classrooms.map((classroom) {
                         final isSelected = _selectedClassroom?.id == classroom.id;
                         return Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap: () => setState(() => _selectedClassroom = classroom),
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: isSelected ? AppColors.primary.withOpacity(0.1) : AppColors.background,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: isSelected ? AppColors.primary : AppColors.textSecondary.withOpacity(0.3),
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      LucideIcons.bookOpen,
-                                      color: isSelected ? AppColors.primary : AppColors.textSecondary,
-                                      size: 20,
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            classroom.name,
-                                            style: GoogleFonts.nunito(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w600,
-                                              color: isSelected ? AppColors.primary : AppColors.text,
-                                            ),
-                                          ),
-                                          if (classroom.description != null)
-                                            Text(
-                                              classroom.description!,
-                                              style: GoogleFonts.nunito(
-                                                fontSize: 11,
-                                                color: AppColors.textSub,
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                    ),
-                                    if (isSelected)
-                                      const Icon(
-                                        LucideIcons.checkCircle,
-                                        color: AppColors.primary,
-                                        size: 20,
-                                      ),
-                                  ],
-                                ),
-                              ),
+                          margin: const EdgeInsets.only(bottom: 10),
+                          decoration: BoxDecoration(
+                            color: isSelected ? AppColors.success.withOpacity(0.08) : AppColors.background.withOpacity(0.5),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: isSelected ? AppColors.success : AppColors.border, width: isSelected ? 1.5 : 1),
+                          ),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                            leading: Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(color: isSelected ? AppColors.success : AppColors.textSub.withOpacity(0.1), shape: BoxShape.circle),
+                              child: Icon(LucideIcons.bookOpen, color: isSelected ? Colors.white : AppColors.textSub, size: 18),
                             ),
+                            title: Text(classroom.name, style: GoogleFonts.nunito(fontSize: 15, fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700, color: isSelected ? AppColors.success : AppColors.text)),
+                            subtitle: classroom.description != null ? Text(classroom.description!, style: GoogleFonts.nunito(fontSize: 12, color: AppColors.textSub)) : null,
+                            trailing: isSelected ? const Icon(LucideIcons.checkCircle, color: AppColors.success, size: 22) : null,
+                            onTap: () => setState(() => _selectedClassroom = classroom),
                           ),
                         );
                       }),
@@ -474,50 +353,20 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
 
               // Settings
               Container(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.border),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.primary.withOpacity(0.1),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 2))],
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [AppColors.primary, AppColors.primary2],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(
-                            LucideIcons.settings,
-                            color: Colors.white,
-                            size: 16,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          'Paramètres',
-                          style: GoogleFonts.nunito(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.text,
-                          ),
-                        ),
+                        const Icon(LucideIcons.settings, color: AppColors.primary, size: 20),
+                        const SizedBox(width: 10),
+                        Text('Paramètres', style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text)),
                       ],
                     ),
                     const SizedBox(height: 20),
@@ -525,22 +374,16 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
                     // Timer
                     TextFormField(
                       controller: _timerController,
-                      style: GoogleFonts.nunito(fontSize: 14),
+                      style: GoogleFonts.nunito(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.text),
                       decoration: InputDecoration(
                         labelText: 'Timer (minutes, 0 = illimité)',
-                        labelStyle: GoogleFonts.nunito(fontSize: 12, color: AppColors.textSub),
+                        labelStyle: GoogleFonts.nunito(fontSize: 13, color: AppColors.textSub, fontWeight: FontWeight.w600),
                         prefixIcon: const Icon(LucideIcons.timer, color: AppColors.primary, size: 20),
-                        hintText: 'Ex: 20',
-                        hintStyle: GoogleFonts.nunito(fontSize: 13, color: AppColors.textSub),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: AppColors.border),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: AppColors.primary),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.border)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
+                        filled: true,
+                        fillColor: AppColors.background.withOpacity(0.5),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                       ),
                       keyboardType: TextInputType.number,
                       onChanged: (value) {
@@ -548,67 +391,77 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
                         setState(() => _timerMinutes = timer != null && timer > 0 ? timer : null);
                       },
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 14),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          {'label': '15 min', 'value': 15},
+                          {'label': '30 min', 'value': 30},
+                          {'label': '45 min', 'value': 45},
+                          {'label': '1 heure', 'value': 60},
+                          {'label': 'Illimité', 'value': 0},
+                        ].map((d) {
+                          final isSelected = _timerMinutes == d['value'];
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: FilterChip(
+                              label: Text(
+                                d['label'] as String,
+                                style: GoogleFonts.nunito(fontSize: 12, fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600, color: isSelected ? Colors.white : AppColors.textSub),
+                              ),
+                              selected: isSelected,
+                              onSelected: (_) {
+                                setState(() {
+                                  _timerMinutes = d['value'] as int > 0 ? d['value'] as int : null;
+                                  _timerController.text = d['value'].toString();
+                                });
+                              },
+                              selectedColor: AppColors.primary,
+                              backgroundColor: AppColors.background,
+                              showCheckmark: false,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: isSelected ? AppColors.primary : AppColors.border)),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
                     
                     // Max participants
                     TextFormField(
                       controller: _maxParticipantsController,
-                      style: GoogleFonts.nunito(fontSize: 14),
+                      style: GoogleFonts.nunito(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.text),
                       decoration: InputDecoration(
-                        labelText: 'Nombre maximum de participants',
-                        labelStyle: GoogleFonts.nunito(fontSize: 12, color: AppColors.textSub),
+                        labelText: 'Nombre maximum d\'élèves',
+                        labelStyle: GoogleFonts.nunito(fontSize: 13, color: AppColors.textSub, fontWeight: FontWeight.w600),
                         prefixIcon: const Icon(LucideIcons.users, color: AppColors.primary, size: 20),
-                        hintText: 'Ex: 50',
-                        hintStyle: GoogleFonts.nunito(fontSize: 13, color: AppColors.textSub),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: AppColors.border),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: AppColors.primary),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.border)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
+                        filled: true,
+                        fillColor: AppColors.background.withOpacity(0.5),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                       ),
                       keyboardType: TextInputType.number,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
                     
                     // Allow anonymous
                     Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppColors.background,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: AppColors.border),
-                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(color: AppColors.background.withOpacity(0.5), borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border)),
                       child: Row(
                         children: [
-                          Icon(
-                            LucideIcons.userCheck,
-                            color: AppColors.primary,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 12),
+                          const Icon(LucideIcons.userCheck, color: AppColors.primary, size: 20),
+                          const SizedBox(width: 14),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  'Autoriser les participants anonymes',
-                                  style: GoogleFonts.nunito(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.text,
-                                  ),
-                                ),
-                                Text(
-                                  'Les utilisateurs peuvent rejoindre sans compte',
-                                  style: GoogleFonts.nunito(
-                                    fontSize: 11,
-                                    color: AppColors.textSub,
-                                  ),
-                                ),
+                                Text('Accès anonyme autorisé', style: GoogleFonts.nunito(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)),
+                                const SizedBox(height: 2),
+                                Text('Permet aux participants sans compte Skwilti de rejoindre', style: GoogleFonts.nunito(fontSize: 11, color: AppColors.textSub)),
                               ],
                             ),
                           ),
@@ -626,60 +479,20 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
               const SizedBox(height: 32),
 
               // Submit button
-              Container(
-                width: double.infinity,
-                height: 48,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [AppColors.primary, AppColors.primary2],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(8),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.primary.withOpacity(0.3),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
+              ElevatedButton.icon(
+                onPressed: (_isLoading || currentSession == null) ? null : _createRoom,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  elevation: 4,
+                  shadowColor: AppColors.primary.withOpacity(0.4),
+                  minimumSize: const Size(double.infinity, 56),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 ),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: (_isLoading || currentSession == null) ? null : _createRoom,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        if (_isLoading)
-                          const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                            ),
-                          )
-                        else ...[
-                          const Icon(
-                            LucideIcons.plus,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            currentSession == null ? 'Créez d\'abord un QCM' : 'Créer la room',
-                            style: GoogleFonts.nunito(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
+                icon: _isLoading ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(LucideIcons.play, size: 20),
+                label: Text(
+                  currentSession == null ? 'Créez d\'abord un QCM' : 'Lancer la Room maintenant',
+                  style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: 0.5),
                 ),
               ),
             ],

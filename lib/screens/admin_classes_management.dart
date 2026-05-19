@@ -104,6 +104,9 @@ class _AdminClassesManagementScreenState extends State<AdminClassesManagementScr
                             ),
                           ),
                         );
+                        if (mounted) {
+                          context.read<AppState>().loadClassesScolaires();
+                        }
                       },
                       onAddStudent: () async {
                         await Navigator.push(
@@ -115,6 +118,9 @@ class _AdminClassesManagementScreenState extends State<AdminClassesManagementScr
                             ),
                           ),
                         );
+                        if (mounted) {
+                          context.read<AppState>().loadClassesScolaires();
+                        }
                       },
                     );
                   },

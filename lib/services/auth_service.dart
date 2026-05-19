@@ -5,6 +5,7 @@ import '../models/user.dart' as app_user;
 import '../models/classroom.dart';
 import '../models/room.dart';
 import '../models/statistics.dart';
+import 'points_service.dart';
 
 class AuthService {
   final _supabase = Supabase.instance.client;
@@ -12,12 +13,16 @@ class AuthService {
   app_user.User? _currentUser;
   List<Classroom> _userClassrooms = [];
   List<Room> _userRooms = [];
+  List<Map<String, dynamic>> _recentSessions = [];
+  List<Map<String, dynamic>> _weeklyScores = [];
   UserStatistics? _userStats;
 
   app_user.User? get currentUser => _currentUser;
   List<Classroom> get userClassrooms => _userClassrooms;
   List<Room> get userRooms => _userRooms;
   UserStatistics? get userStats => _userStats;
+  List<Map<String, dynamic>> get recentSessions => _recentSessions;
+  List<Map<String, dynamic>> get weeklyScores => _weeklyScores;
   bool get isAuthenticated => _currentUser != null;
 
   String _generateInviteCode() {
@@ -45,7 +50,7 @@ class AuthService {
           .timeout(const Duration(seconds: 20));
 
       _currentUser = _profileToUser(profile);
-      await _loadUserData();
+      await loadUserData();
       return _currentUser!;
     } on TimeoutException catch (e) {
       throw Exception('Erreur de connexion: délai dépassé. Vérifiez votre connexion.');
@@ -114,7 +119,7 @@ class AuthService {
       if (profile == null) throw Exception('Impossible de récupérer le profil.');
 
       _currentUser = _profileToUser(profile);
-      await _loadUserData();
+      await loadUserData();
       return _currentUser!;
     } on TimeoutException {
       throw Exception('Erreur d\'inscription: délai dépassé.');
@@ -126,6 +131,66 @@ class AuthService {
       throw Exception('Erreur d\'inscription: ${e.message}');
     } catch (e) {
       throw Exception('Erreur d\'inscription: $e');
+    }
+  }
+
+  /// Permet à l'administrateur d'inscrire un utilisateur sans déconnecter sa propre session
+  Future<void> adminCreateUser({
+    required String email,
+    required String password,
+    required String firstName,
+    required String lastName,
+    required app_user.UserRole role,
+    required app_user.SubscriptionType subscription,
+  }) async {
+    try {
+      final tempClient = SupabaseClient(
+        'https://lipakwyzlrdiooknchfi.supabase.co',
+        'sb_publishable_E_R4wDuXn5AvfEW76fDduw_nM6eBQBA',
+        authOptions: const AuthClientOptions(
+          pkceAsyncStorage: DummyAsyncStorage(),
+        ),
+      );
+      
+      final response = await tempClient.auth.signUp(
+        email: email,
+        password: password,
+        data: {
+          'first_name': firstName,
+          'last_name': lastName,
+          'role': role.name,
+          'subscription': subscription.name,
+        },
+      ).timeout(const Duration(seconds: 30));
+
+      if (response.user == null) {
+        throw Exception('Erreur lors de l\'inscription Supabase Auth');
+      }
+
+      // Insérer ou mettre à jour dans les profiles (avec le client temporaire pour RLS, fallback sur le client principal)
+      try {
+        await tempClient.from('profiles').upsert({
+          'id': response.user!.id,
+          'email': email,
+          'first_name': firstName,
+          'last_name': lastName,
+          'role': role.name,
+          'subscription': subscription.name,
+        }).timeout(const Duration(seconds: 15));
+      } catch (e) {
+        print('⚠️ tempClient upsert failed: $e. Trying main admin client...');
+        await _supabase.from('profiles').upsert({
+          'id': response.user!.id,
+          'email': email,
+          'first_name': firstName,
+          'last_name': lastName,
+          'role': role.name,
+          'subscription': subscription.name,
+        }).timeout(const Duration(seconds: 15));
+      }
+
+    } catch (e) {
+      throw Exception(e.toString());
     }
   }
 
@@ -152,7 +217,7 @@ class AuthService {
           .timeout(const Duration(seconds: 20));
 
       _currentUser = _profileToUser(profile);
-      await _loadUserData();
+      await loadUserData();
       return _currentUser;
     } on TimeoutException {
       return null;
@@ -187,8 +252,7 @@ class AuthService {
     );
   }
 
-  // ✅ CHARGER DONNÉES SELON RÔLE
-  Future<void> _loadUserData() async {
+   Future<void> loadUserData() async {
     if (_currentUser == null) return;
     switch (_currentUser!.role) {
       case app_user.UserRole.teacher:
@@ -197,14 +261,11 @@ class AuthService {
       case app_user.UserRole.student:
         await _loadStudentData();
         break;
-      case app_user.UserRole.parent:
-        await _loadParentData();
-        break;
       case app_user.UserRole.admin:
-        _userStats = UserStatistics(
-          userId: _currentUser!.id,
-          lastActivityAt: DateTime.now(),
-        );
+        // Admin data loaded on demand
+        break;
+      case app_user.UserRole.parent:
+        // Parent data loaded on demand
         break;
     }
   }
@@ -213,84 +274,240 @@ class AuthService {
     try {
       final classrooms = await _supabase
           .from('classrooms')
-          .select()
+          .select('*, classroom_members(count), classes_scolaires(profiles(count))')
           .eq('teacher_id', _currentUser!.id)
           .order('created_at', ascending: false)
-          .timeout(const Duration(seconds: 8));
+          .timeout(const Duration(seconds: 10));
 
-      _userClassrooms = classrooms.map<Classroom>((c) => Classroom(
-        id: c['id'],
-        name: c['name'],
-        description: c['description'],
-        teacherId: c['teacher_id'],
-        teacherName: c['teacher_name'] ?? _currentUser!.fullName,
-        category: CourseCategory.values.firstWhere(
-          (cat) => cat.name == c['category'],
-          orElse: () => CourseCategory.other,
-        ),
-        level: CourseLevel.values.firstWhere(
-          (lvl) => lvl.name == c['level'],
-          orElse: () => CourseLevel.middleSchool,
-        ),
-        createdAt: DateTime.parse(c['created_at']),
-        inviteCode: c['invite_code'] ?? _generateInviteCode(),
-        totalStudents: c['total_students'] ?? 0,
-        totalQsmCreated: c['total_qsm_created'] ?? 0,
-      )).toList();
-
-      final sessions = await _supabase
-          .from('quiz_sessions')
-          .select()
-          .eq('user_id', _currentUser!.id)
-          .timeout(const Duration(seconds: 8));
-
-      _userStats = UserStatistics(
-        userId: _currentUser!.id,
-        totalQsmCreated: _userClassrooms.length,
-        totalSessions: sessions.length,
-        totalPoints: _currentUser!.points,
-        lastActivityAt: DateTime.now(),
-      );
+      _userClassrooms = classrooms.map<Classroom>((c) => _mapSingleClassroom(c)).toList();
+      await fetchTeacherRooms(_currentUser!.id);
     } catch (e) {
       print('⚠️ _loadTeacherData: $e');
-      _userClassrooms = [];
-      _userStats = UserStatistics(userId: _currentUser!.id, lastActivityAt: DateTime.now());
     }
+  }
+
+  Classroom _mapSingleClassroom(Map<String, dynamic> c) {
+    return Classroom(
+      id: c['id'],
+      name: c['name'],
+      description: c['description'],
+      teacherId: c['teacher_id'],
+      teacherName: c['teacher_name'] ?? (_currentUser?.fullName ?? 'Enseignant'),
+      category: CourseCategory.values.firstWhere(
+        (cat) => cat.name == c['category'],
+        orElse: () => CourseCategory.other,
+      ),
+      level: CourseLevel.values.firstWhere(
+        (lvl) => lvl.name == c['level'],
+        orElse: () => CourseLevel.middleSchool,
+      ),
+      createdAt: DateTime.parse(c['created_at']),
+      inviteCode: c['invite_code'] ?? '',
+      totalStudents: (() {
+        int manualCount = 0;
+        if (c['classroom_members'] is List && (c['classroom_members'] as List).isNotEmpty) {
+          manualCount = (c['classroom_members'] as List)[0]['count'] ?? 0;
+        }
+        int schoolClassCount = 0;
+        if (c['classes_scolaires'] != null) {
+          final cs = c['classes_scolaires'];
+          if (cs['profiles'] is List && (cs['profiles'] as List).isNotEmpty) {
+            schoolClassCount = (cs['profiles'] as List)[0]['count'] ?? 0;
+          }
+        }
+        return manualCount > schoolClassCount ? manualCount : schoolClassCount;
+      })(),
+      totalQsmCreated: c['total_qsm_created'] ?? 0,
+      classeScolaireId: c['classe_scolaire_id']?.toString(),
+    );
   }
 
   Future<void> _loadStudentData() async {
     try {
+      // 1. Récupérer les sessions
       final sessions = await _supabase
           .from('quiz_sessions')
-          .select()
+          .select('*, courses(title)')
           .eq('user_id', _currentUser!.id)
           .order('completed_at', ascending: false)
-          .limit(20)
           .timeout(const Duration(seconds: 8));
 
+      _recentSessions = List<Map<String, dynamic>>.from(sessions);
+
+      // 1.5 Récupérer les scores de la semaine
+      _weeklyScores = await fetchWeeklyScores(_currentUser!.id);
+
+      // 2. Calculer les statistiques réelles
       final scores = sessions
-          .where((s) => s['score'] != null && s['total_questions'] != null && s['total_questions'] > 0)
+          .where((s) => s['score'] != null && s['total_questions'] != null && (s['total_questions'] as int) > 0)
           .map<int>((s) => ((s['score'] as int) * 100 ~/ (s['total_questions'] as int)))
           .toList();
 
-      final avg = scores.isNotEmpty
-          ? scores.reduce((a, b) => a + b) / scores.length
-          : 0.0;
+      double avgScore = scores.isEmpty ? 0 : scores.reduce((a, b) => a + b) / scores.length;
+      int bestScore = scores.isEmpty ? 0 : scores.reduce((a, b) => a > b ? a : b);
 
       _userStats = UserStatistics(
         userId: _currentUser!.id,
         totalQsmCompleted: sessions.length,
-        averageScore: avg,
+        averageScore: avgScore,
         totalPoints: _currentUser!.points,
-        recentScores: scores.take(10).toList(),
-        totalSessions: sessions.length,
         lastActivityAt: DateTime.now(),
       );
+
+      // 3. Charger les classes
+      List<Classroom> classrooms = [];
+      final manualRes = await _supabase
+          .from('classroom_members')
+          .select('classrooms(*, classroom_members(count), classes_scolaires(profiles(count)))')
+          .eq('student_id', _currentUser!.id);
+      
+      for (var item in manualRes) {
+        if (item['classrooms'] != null) {
+          classrooms.add(_mapSingleClassroom(item['classrooms']));
+        }
+      }
+      _userClassrooms = classrooms;
     } catch (e) {
       print('⚠️ _loadStudentData: $e');
       _userStats = UserStatistics(userId: _currentUser!.id, lastActivityAt: DateTime.now());
     }
   }
+
+  Future<List<Classroom>> fetchAllClassrooms() async {
+    try {
+      final response = await _supabase.from('classrooms').select().order('name', ascending: true);
+      return response.map<Classroom>((c) => _mapSingleClassroom(c)).toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<void> assignEtudiantToClasse({required String studentId, required String classeId}) async {
+    await _supabase.from('profiles').update({'classe_id': classeId}).eq('id', studentId);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchStudentsBySchoolClass(String schoolClassId) async {
+    try {
+      final res = await _supabase.from('profiles').select().eq('classe_id', schoolClassId).eq('role', 'student');
+      return List<Map<String, dynamic>>.from(res);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchClassroomStudents(String classroomId, {String? schoolClassId}) async {
+    try {
+      final Map<String, Map<String, dynamic>> uniqueStudents = {};
+      final memberResponse = await _supabase
+          .from('classroom_members')
+          .select('student:profiles(id, first_name, last_name, email, code_massar, avatar_url, classe_id)')
+          .eq('classroom_id', classroomId);
+      
+      for (var m in memberResponse) {
+        if (m['student'] != null) {
+          final s = Map<String, dynamic>.from(m['student']);
+          uniqueStudents[s['id'].toString()] = s;
+        }
+      }
+
+      if (schoolClassId != null) {
+        final schoolStudents = await fetchStudentsBySchoolClass(schoolClassId);
+        for (var s in schoolStudents) {
+          if (!uniqueStudents.containsKey(s['id'].toString())) {
+            uniqueStudents[s['id'].toString()] = s;
+          }
+        }
+      }
+      return uniqueStudents.values.toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchNotifications() async {
+    if (_currentUser == null) return [];
+    try {
+      // 🚀 Suppression automatique des notifications étudiantes de plus de 2 heures
+      if (_currentUser!.role == app_user.UserRole.student) {
+        final twoHoursAgo = DateTime.now().subtract(const Duration(hours: 2)).toIso8601String();
+        try {
+          await _supabase.from('notifications')
+              .delete()
+              .eq('user_id', _currentUser!.id)
+              .lt('created_at', twoHoursAgo);
+        } catch (e) {
+          print('⚠️ Erreur lors de la suppression des anciennes notifications: $e');
+        }
+      }
+
+      final res = await _supabase.from('notifications').select().eq('user_id', _currentUser!.id).order('created_at', ascending: false);
+      return List<Map<String, dynamic>>.from(res);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /// Soumet une réclamation et l'envoie à tous les administrateurs
+  Future<void> submitComplaint({
+    required String email,
+    required String subject,
+    required String description,
+  }) async {
+    try {
+      // 1. Récupérer tous les administrateurs
+      final admins = await _supabase
+          .from('profiles')
+          .select('id')
+          .eq('role', 'admin');
+
+      // 2. Insérer une notification pour chaque administrateur
+      if (admins.isNotEmpty) {
+        final List<Map<String, dynamic>> notifs = [];
+        for (var admin in admins) {
+          final adminId = admin['id']?.toString();
+          if (adminId != null) {
+            notifs.add({
+              'user_id': adminId,
+              'title': '🚨 Réclamation : $subject',
+              'message': 'De $email : $description',
+              'type': 'other',
+              'is_read': false,
+              'created_at': DateTime.now().toIso8601String(),
+            });
+          }
+        }
+        if (notifs.isNotEmpty) {
+          await _supabase.from('notifications').insert(notifs);
+        }
+      }
+    } catch (e) {
+      print('⚠️ Erreur lors de la soumission de la réclamation: $e');
+      rethrow;
+    }
+  }
+
+  /// Envoie une notification à l'enseignant quand un étudiant rejoint sa room
+  Future<void> sendRoomJoinNotification({
+    required String teacherId,
+    required String studentName,
+    required String roomName,
+    required String roomId,
+  }) async {
+    try {
+      await _supabase.from('notifications').insert({
+        'user_id': teacherId,
+        'title': 'Nouvel élève dans la room',
+        'message': '$studentName vient de rejoindre la room "$roomName"',
+        'type': 'room_join',
+        'data': {'room_id': roomId, 'student_name': studentName},
+        'is_read': false,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+    } catch (e) {
+      print('⚠️ sendRoomJoinNotification: $e');
+    }
+  }
+
 
   Future<void> _loadParentData() async {
     try {
@@ -359,14 +576,25 @@ class AuthService {
     }
   }
 
-  /// Upload un cours simple
-  Future<void> uploadCourse(Map<String, dynamic> courseData) async {
-    if (_currentUser == null) return;
+  /// Upload un cours simple et retourne son ID
+  Future<String> uploadCourse(Map<String, dynamic> courseData) async {
+    if (_currentUser == null) throw Exception('Non connecté');
     try {
-      await _supabase.from('courses').insert({
+      final res = await _supabase.from('courses').insert({
         ...courseData,
         'teacher_id': _currentUser!.id,
-      }).timeout(const Duration(seconds: 10));
+      }).select('id').single().timeout(const Duration(seconds: 10));
+      
+      // Award 50 points to the teacher
+      try {
+        await PointsService.incrementPoints(_currentUser!.id, 50);
+        _currentUser = _currentUser!.copyWith(points: _currentUser!.points + 50);
+        print('🏆 [uploadCourse] Enseignant a gagné +50 points !');
+      } catch (pe) {
+        print('🔴 Erreur ajout points enseignant: $pe');
+      }
+      
+      return res['id'].toString();
     } catch (e) {
       print('⚠️ uploadCourse error: $e');
       rethrow;
@@ -377,23 +605,59 @@ class AuthService {
   Future<Map<int, int>> fetchTeacherWeeklyActivity(String teacherId) async {
     try {
       final sevenDaysAgo = DateTime.now().subtract(const Duration(days: 7));
-      final sessions = await _supabase
-          .from('quiz_sessions')
-          .select('completed_at, classroom_id')
-          .gte('completed_at', sevenDaysAgo.toIso8601String())
-          .inFilter('classroom_id', _userClassrooms.map((c) => c.id).toList())
+      
+      // 1. Récupérer les cours créés par l'enseignant
+      final coursesRes = await _supabase
+          .from('courses')
+          .select('created_at')
+          .eq('teacher_id', teacherId)
+          .gte('created_at', sevenDaysAgo.toIso8601String())
+          .timeout(const Duration(seconds: 10));
+
+      // 2. Récupérer les rooms créées par l'enseignant
+      final roomsRes = await _supabase
+          .from('rooms')
+          .select('created_at')
+          .eq('teacher_id', teacherId)
+          .gte('created_at', sevenDaysAgo.toIso8601String())
+          .timeout(const Duration(seconds: 10));
+
+      // 3. Récupérer les classes créées par l'enseignant
+      final classroomsRes = await _supabase
+          .from('classrooms')
+          .select('created_at')
+          .eq('teacher_id', teacherId)
+          .gte('created_at', sevenDaysAgo.toIso8601String())
           .timeout(const Duration(seconds: 10));
 
       final Map<int, int> byDay = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0};
-      for (final s in sessions) {
-        if (s['completed_at'] != null) {
-          final date = DateTime.parse(s['completed_at']);
-          final dayIndex = DateTime.now().difference(date).inDays;
-          if (dayIndex >= 0 && dayIndex < 7) {
-            byDay[6 - dayIndex] = (byDay[6 - dayIndex] ?? 0) + 1;
+      final today = DateTime.now();
+      final todayStart = DateTime(today.year, today.month, today.day);
+
+      void incrementDay(String? createdAtStr) {
+        if (createdAtStr != null) {
+          final date = DateTime.tryParse(createdAtStr);
+          if (date != null) {
+            final localDate = date.toLocal();
+            final itemStart = DateTime(localDate.year, localDate.month, localDate.day);
+            final dayIndex = todayStart.difference(itemStart).inDays;
+            if (dayIndex >= 0 && dayIndex < 7) {
+              byDay[6 - dayIndex] = (byDay[6 - dayIndex] ?? 0) + 1;
+            }
           }
         }
       }
+
+      for (final c in coursesRes) {
+        incrementDay(c['created_at']?.toString());
+      }
+      for (final r in roomsRes) {
+        incrementDay(r['created_at']?.toString());
+      }
+      for (final cl in classroomsRes) {
+        incrementDay(cl['created_at']?.toString());
+      }
+
       return byDay;
     } catch (e) {
       print('⚠️ fetchTeacherWeeklyActivity: $e');
@@ -1056,26 +1320,60 @@ class AuthService {
     }
   }
 
-  /// Récupère les sessions par jour des 7 derniers jours (admin)
+  /// Récupère l'activité de la plateforme par jour sur les 7 derniers jours (admin)
   Future<Map<int, int>> fetchAdminWeeklyActivity() async {
     try {
       final sevenDaysAgo = DateTime.now().subtract(const Duration(days: 7));
+      
+      // 1. Sessions terminées
       final sessions = await _supabase
           .from('quiz_sessions')
           .select('completed_at')
           .gte('completed_at', sevenDaysAgo.toIso8601String())
           .timeout(const Duration(seconds: 10));
 
+      // 2. Nouveaux profils inscrits
+      final profiles = await _supabase
+          .from('profiles')
+          .select('created_at')
+          .gte('created_at', sevenDaysAgo.toIso8601String())
+          .timeout(const Duration(seconds: 10));
+
+      // 3. Nouvelles Rooms créées
+      final rooms = await _supabase
+          .from('rooms')
+          .select('created_at')
+          .gte('created_at', sevenDaysAgo.toIso8601String())
+          .timeout(const Duration(seconds: 10));
+
       final Map<int, int> byDay = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0};
-      for (final s in sessions) {
-        if (s['completed_at'] != null) {
-          final date = DateTime.parse(s['completed_at']);
-          final dayIndex = DateTime.now().difference(date).inDays;
-          if (dayIndex >= 0 && dayIndex < 7) {
-            byDay[6 - dayIndex] = (byDay[6 - dayIndex] ?? 0) + 1;
+      final today = DateTime.now();
+      final todayStart = DateTime(today.year, today.month, today.day);
+
+      void incrementDay(String? dateStr) {
+        if (dateStr != null) {
+          final date = DateTime.tryParse(dateStr);
+          if (date != null) {
+            final localDate = date.toLocal();
+            final itemStart = DateTime(localDate.year, localDate.month, localDate.day);
+            final dayIndex = todayStart.difference(itemStart).inDays;
+            if (dayIndex >= 0 && dayIndex < 7) {
+              byDay[6 - dayIndex] = (byDay[6 - dayIndex] ?? 0) + 1;
+            }
           }
         }
       }
+
+      for (final s in sessions) {
+        incrementDay(s['completed_at']?.toString());
+      }
+      for (final p in profiles) {
+        incrementDay(p['created_at']?.toString());
+      }
+      for (final r in rooms) {
+        incrementDay(r['created_at']?.toString());
+      }
+
       return byDay;
     } catch (e) {
       print('⚠️ fetchAdminWeeklyActivity: $e');
@@ -1085,18 +1383,35 @@ class AuthService {
 
   /// Récupère les sessions d'un enfant (pour le parent)
   Future<List<Map<String, dynamic>>> fetchChildSessions(String childId) async {
+    print('📊 fetchChildSessions → childId=$childId');
     try {
       final sessions = await _supabase
           .from('quiz_sessions')
-          .select('*, courses(title, subject)')
+          .select('id, score, total_questions, completed_at, course_id, classroom_id, courses(title, subject), classrooms(profiles(first_name, last_name))')
           .eq('user_id', childId)
           .order('completed_at', ascending: false)
-          .limit(20)
-          .timeout(const Duration(seconds: 10));
+          .limit(50)
+          .timeout(const Duration(seconds: 15));
+      print('📊 fetchChildSessions → ${sessions.length} sessions found for child $childId');
+      if (sessions.isNotEmpty) print('📊 first session: ${sessions.first}');
       return List<Map<String, dynamic>>.from(sessions);
     } catch (e) {
-      print('⚠️ fetchChildSessions: $e');
-      return [];
+      print('❌ fetchChildSessions error: $e');
+      // Fallback without join in case of FK/RLS issue
+      try {
+        final fallback = await _supabase
+            .from('quiz_sessions')
+            .select('id, score, total_questions, completed_at, course_id, classroom_id')
+            .eq('user_id', childId)
+            .order('completed_at', ascending: false)
+            .limit(50)
+            .timeout(const Duration(seconds: 15));
+        print('📊 fetchChildSessions fallback → ${fallback.length} sessions');
+        return List<Map<String, dynamic>>.from(fallback);
+      } catch (e2) {
+        print('❌ fetchChildSessions fallback error: $e2');
+        return [];
+      }
     }
   }
 
@@ -1178,6 +1493,16 @@ class AuthService {
       );
 
       _userClassrooms.add(classroom);
+
+      // Award 20 points to the teacher
+      try {
+        await PointsService.incrementPoints(_currentUser!.id, 20);
+        _currentUser = _currentUser!.copyWith(points: _currentUser!.points + 20);
+        print('🏆 [createClassroom] Enseignant a gagné +20 points !');
+      } catch (pe) {
+        print('🔴 Erreur ajout points enseignant: $pe');
+      }
+
       return classroom;
     } catch (e) {
       throw Exception('Erreur création classroom: $e');
@@ -1237,13 +1562,22 @@ class AuthService {
         print('🟢 Importé ${members.length} étudiants dans classroom $classroomId');
       }
 
-      // 4. Créer aussi l'affectation professeur-classe-matière
-      await _supabase.from('classe_professeurs').insert({
-        'classe_id': classeScolaireId,
-        'matiere_id': matiereId,
-        'professeur_id': _currentUser!.id,
-        'created_at': DateTime.now().toIso8601String(),
-      });
+      // 4. Créer aussi l'affectation professeur-classe-matière (seulement si elle n'existe pas déjà)
+      final existingAssignment = await _supabase
+          .from('classe_professeurs')
+          .select()
+          .eq('classe_id', classeScolaireId)
+          .eq('matiere_id', matiereId)
+          .maybeSingle();
+
+      if (existingAssignment == null) {
+        await _supabase.from('classe_professeurs').insert({
+          'classe_id': classeScolaireId,
+          'matiere_id': matiereId,
+          'professeur_id': _currentUser!.id,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      }
 
       final classroom = Classroom(
         id: data['id'],
@@ -1259,6 +1593,16 @@ class AuthService {
       );
 
       _userClassrooms.add(classroom);
+
+      // Award 20 points to the teacher
+      try {
+        await PointsService.incrementPoints(_currentUser!.id, 20);
+        _currentUser = _currentUser!.copyWith(points: _currentUser!.points + 20);
+        print('🏆 [createClassroomWithSchoolClass] Enseignant a gagné +20 points !');
+      } catch (pe) {
+        print('🔴 Erreur ajout points enseignant: $pe');
+      }
+
       return classroom;
     } catch (e) {
       throw Exception('Erreur création classroom avec classe scolaire: $e');
@@ -1268,9 +1612,46 @@ class AuthService {
   // ════════════════════════════════════════════════════════════════
   // CRÉER ROOM (mock temporaire)
   // ════════════════════════════════════════════════════════════════
+  /// Récupère les rooms de l'enseignant
+  Future<List<Room>> fetchTeacherRooms(String teacherId) async {
+    try {
+      final response = await _supabase
+          .from('rooms')
+          .select()
+          .eq('teacher_id', teacherId)
+          .order('created_at', ascending: false)
+          .timeout(const Duration(seconds: 10));
+          
+      _userRooms = response.map<Room>((r) => Room(
+        id: r['id']?.toString() ?? '',
+        name: r['name']?.toString() ?? '',
+        classroomId: r['classroom_id']?.toString() ?? '',
+        teacherId: r['teacher_id']?.toString() ?? '',
+        qcmSessionId: r['qcm_session_id']?.toString() ?? '',
+        inviteLink: r['invite_link']?.toString() ?? '',
+        roomCode: r['room_code']?.toString(),
+        createdAt: DateTime.tryParse(r['created_at']?.toString() ?? '') ?? DateTime.now(),
+        startedAt: r['started_at'] != null ? DateTime.tryParse(r['started_at']) : null,
+        expiresAt: r['expires_at'] != null ? DateTime.tryParse(r['expires_at']) : null,
+        status: RoomStatus.values.firstWhere(
+          (s) => s.name == (r['status'] ?? 'waiting'),
+          orElse: () => RoomStatus.waiting,
+        ),
+        timerMinutes: r['timer_minutes'] as int?,
+        maxParticipants: r['max_participants'] as int? ?? 50,
+        allowAnonymous: r['allow_anonymous'] as bool? ?? false,
+      )).toList();
+      return _userRooms;
+    } catch (e) {
+      print('⚠️ fetchTeacherRooms: $e');
+      return [];
+    }
+  }
+
   Future<Room> createRoom({
     required String name,
     required String classroomId,
+    String? schoolClassId,
     required String qcmSessionId,
     int? timerMinutes,
     int maxParticipants = 50,
@@ -1279,25 +1660,308 @@ class AuthService {
     if (_currentUser?.role != app_user.UserRole.teacher) {
       throw Exception('Seuls les enseignants peuvent créer des rooms');
     }
-    await Future.delayed(const Duration(seconds: 1));
+
     final code = _generateInviteCode();
-    final room = Room(
-      id: 'room_${DateTime.now().millisecondsSinceEpoch}',
-      name: name,
-      classroomId: classroomId,
-      teacherId: _currentUser!.id,
-      qcmSessionId: qcmSessionId,
-      inviteLink: 'https://skwilti.app/room/$code',
-      roomCode: code,
-      createdAt: DateTime.now(),
-      expiresAt: timerMinutes != null
-          ? DateTime.now().add(Duration(minutes: timerMinutes))
-          : null,
-      timerMinutes: timerMinutes,
-      maxParticipants: maxParticipants,
-      allowAnonymous: allowAnonymous,
-    );
-    _userRooms.add(room);
-    return room;
+    final now = DateTime.now();
+    final expiresAt = timerMinutes != null ? now.add(Duration(minutes: timerMinutes)) : null;
+
+    final roomData = {
+      'name': name,
+      'classroom_id': classroomId,
+      'teacher_id': _currentUser!.id,
+      'qcm_session_id': qcmSessionId,
+      'invite_link': 'https://skwilti.app/room/$code',
+      'room_code': code,
+      'created_at': now.toIso8601String(),
+      'expires_at': expiresAt?.toIso8601String(),
+      'status': 'active',
+      'timer_minutes': timerMinutes,
+      'max_participants': maxParticipants,
+      'allow_anonymous': allowAnonymous,
+    };
+
+    try {
+      final response = await _supabase
+          .from('rooms')
+          .insert(roomData)
+          .select()
+          .single();
+
+      final room = Room(
+        id: response['id'].toString(),
+        name: response['name'],
+        classroomId: response['classroom_id'],
+        teacherId: response['teacher_id'],
+        qcmSessionId: response['qcm_session_id'],
+        inviteLink: response['invite_link'],
+        roomCode: response['room_code'],
+        createdAt: DateTime.parse(response['created_at']),
+        expiresAt: response['expires_at'] != null ? DateTime.parse(response['expires_at']) : null,
+        status: RoomStatus.active,
+        timerMinutes: response['timer_minutes'],
+        maxParticipants: response['max_participants'],
+        allowAnonymous: response['allow_anonymous'],
+      );
+
+      _userRooms.insert(0, room);
+
+      // Award 30 points to the teacher
+      try {
+        await PointsService.incrementPoints(_currentUser!.id, 30);
+        _currentUser = _currentUser!.copyWith(points: _currentUser!.points + 30);
+        print('🏆 [createRoom] Enseignant a gagné +30 points !');
+      } catch (pe) {
+        print('🔴 Erreur ajout points enseignant: $pe');
+      }
+
+      // Notification aux étudiants
+      try {
+        final students = await fetchClassroomStudents(classroomId, schoolClassId: schoolClassId);
+        if (students.isNotEmpty) {
+          final notifications = students.map((s) => {
+            'user_id': s['id'],
+            'title': 'Nouvelle Room de QSM !',
+            'message': 'Rejoignez "$name" avec le code : $code',
+            'type': 'room_created',
+            'created_at': now.toIso8601String(),
+            'is_read': false,
+            'data': {'room_id': room.id, 'room_code': code}
+          }).toList();
+          await _supabase.from('notifications').insert(notifications);
+        }
+      } catch (e) {
+        print('🔴 Erreur notifications: $e');
+      }
+
+      return room;
+    } catch (e) {
+      print('⚠️ createRoom error: $e');
+      rethrow;
+    }
   }
+
+  Future<Map<String, dynamic>?> fetchRoomByCode(String code) async {
+    print('🔍 [fetchRoomByCode] Recherche du code : $code');
+    try {
+      final roomResponse = await _supabase
+          .from('rooms')
+          .select()
+          .eq('room_code', code.toUpperCase())
+          .maybeSingle();
+      
+      if (roomResponse == null) {
+        print('❌ [fetchRoomByCode] Room non trouvée pour le code : $code');
+        return null;
+      }
+
+      print('✅ [fetchRoomByCode] Room trouvée : ${roomResponse['name']}');
+
+      final sessionId = roomResponse['qcm_session_id']?.toString();
+      if (sessionId != null && sessionId.isNotEmpty) {
+        print('🆔 [fetchRoomByCode] sessionId trouvé : $sessionId');
+        final uuidRegExp = RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', caseSensitive: false);
+        
+        if (uuidRegExp.hasMatch(sessionId)) {
+          print('💎 [fetchRoomByCode] UUID valide, recherche des questions...');
+          final sessionResponse = await _supabase.from('quiz_sessions').select().eq('id', sessionId).maybeSingle();
+          roomResponse['quiz_sessions'] = sessionResponse;
+          
+          if (sessionResponse != null) {
+            print('📋 [fetchRoomByCode] Session trouvée, chargement des questions via session...');
+            roomResponse['questions'] = await fetchSessionQuestions(sessionId);
+          } else {
+            print('📝 [fetchRoomByCode] Session non trouvée, tentative de chargement direct par course_id...');
+            roomResponse['questions'] = await fetchQuestionsByCourseId(sessionId);
+          }
+        } else {
+          print('⚠️ [fetchRoomByCode] sessionId $sessionId n\'est pas un UUID valide.');
+        }
+      }
+      
+      final qCount = (roomResponse['questions'] as List?)?.length ?? 0;
+      print('📊 [fetchRoomByCode] Nombre de questions récupérées : $qCount');
+      
+      return roomResponse;
+    } catch (e) {
+      print('🔴 [fetchRoomByCode] Erreur critique : $e');
+      return null;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchSessionQuestions(String sessionId) async {
+    try {
+      final response = await _supabase
+          .from('questions')
+          .select()
+          .eq('session_id', sessionId)
+          .order('order_index', ascending: true);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchQuestionsByCourseId(String courseId) async {
+    try {
+      final response = await _supabase
+          .from('questions')
+          .select()
+          .eq('course_id', courseId)
+          .order('created_at', ascending: true);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<void> saveSessionResult({
+    required String sessionId,
+    required String courseId,
+    String? roomId,
+    String? classroomId,
+    required int score,
+    required int totalQuestions,
+    required Map<String, dynamic> answers,
+  }) async {
+    if (_currentUser == null) return;
+    try {
+      final now = DateTime.now();
+      final dataToInsert = {
+        'user_id': _currentUser!.id,
+        'course_id': courseId,
+        'room_id': roomId,
+        'classroom_id': classroomId,
+        'score': score,
+        'total_questions': totalQuestions,
+        'completed_at': now.toIso8601String(),
+      };
+
+      await _supabase.from('quiz_sessions').insert(dataToInsert);
+      
+      // Award 10 points per correct answer to the student
+      final pointsToAward = score * 10;
+      if (pointsToAward > 0) {
+        await PointsService.incrementPoints(_currentUser!.id, pointsToAward);
+        _currentUser = _currentUser!.copyWith(points: _currentUser!.points + pointsToAward);
+        print('🏆 [saveSessionResult] Élève a gagné +$pointsToAward points !');
+      }
+      
+      print('✅ [saveSessionResult] Score de $score enregistré avec succès !');
+      await loadUserData();
+    } catch (e) {
+      print('🔴 [saveSessionResult] Erreur lors de l\'enregistrement : $e');
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchRoomSessions(String roomId) async {
+    try {
+      // 1. Essayer d'abord la requête jointe directe (optimale)
+      try {
+        final response = await _supabase
+            .from('quiz_sessions')
+            .select('*, profiles(first_name, last_name, avatar_url)')
+            .eq('room_id', roomId)
+            .order('completed_at', ascending: false);
+        if (response != null && (response as List).isNotEmpty) {
+          return List<Map<String, dynamic>>.from(response);
+        }
+      } catch (e) {
+        print('⚠️ fetchRoomSessions joint query failed: $e. Using bulletproof fallback...');
+      }
+
+      // 2. Fallback robuste en deux étapes (insensible aux relations de clé étrangère)
+      final sessionsResponse = await _supabase
+          .from('quiz_sessions')
+          .select('*')
+          .eq('room_id', roomId)
+          .order('completed_at', ascending: false);
+      
+      final sessions = List<Map<String, dynamic>>.from(sessionsResponse ?? []);
+      if (sessions.isEmpty) return [];
+
+      // Extraire tous les user_ids uniques
+      final userIds = sessions.map((s) => s['user_id']?.toString()).where((id) => id != null).toSet().toList();
+      if (userIds.isEmpty) return sessions;
+
+      // Récupérer les profils correspondants
+      final profilesResponse = await _supabase
+          .from('profiles')
+          .select('id, first_name, last_name, avatar_url')
+          .inFilter('id', userIds);
+      
+      final profiles = List<Map<String, dynamic>>.from(profilesResponse ?? []);
+      final Map<String, Map<String, dynamic>> profileMap = {
+        for (var p in profiles) p['id'].toString(): p
+      };
+
+      // Associer les profils aux sessions
+      for (var s in sessions) {
+        final uid = s['user_id']?.toString();
+        if (uid != null && profileMap.containsKey(uid)) {
+          s['profiles'] = profileMap[uid];
+        }
+      }
+
+      return sessions;
+    } catch (e) {
+      print('⚠️ fetchRoomSessions ultimate fallback error: $e');
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchAdminCourses() async {
+    try {
+      final res = await _supabase
+          .from('courses')
+          .select()
+          .order('created_at', ascending: false)
+          .limit(100);
+      return List<Map<String, dynamic>>.from(res);
+    } catch (e) {
+      print('⚠️ fetchAdminCourses: $e');
+      return [];
+    }
+  }
+
+  Future<String?> fetchSessionIdByCourseId(String courseId) async {
+    try {
+      final response = await _supabase.from('quiz_sessions').select('id').eq('course_id', courseId).maybeSingle();
+      return response?['id']?.toString();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<bool> hasCompletedSession({String? courseId, String? roomId}) async {
+    if (_currentUser == null) return false;
+    try {
+      var query = _supabase.from('quiz_sessions').select().eq('user_id', _currentUser!.id);
+      if (roomId != null) {
+        query = query.eq('room_id', roomId);
+      } else if (courseId != null) {
+        query = query.eq('course_id', courseId);
+      } else {
+        return false;
+      }
+      
+      final res = await query.timeout(const Duration(seconds: 5));
+      return (res as List).isNotEmpty;
+    } catch (e) {
+      print('⚠️ error checking completed session: $e');
+      return false;
+    }
+  }
+}
+
+class DummyAsyncStorage extends GotrueAsyncStorage {
+  const DummyAsyncStorage();
+
+  @override
+  Future<String?> getItem({required String key}) async => null;
+
+  @override
+  Future<void> removeItem({required String key}) async {}
+
+  @override
+  Future<void> setItem({required String key, required String value}) async {}
 }

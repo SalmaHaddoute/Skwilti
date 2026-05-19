@@ -141,14 +141,14 @@ class SectionTitle extends StatelessWidget {
       children: [
         Text(title,
             style: const TextStyle(
-                fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)),
+                fontSize: 16, fontWeight: FontWeight.w900, color: AppColors.text)),
         if (action != null)
           GestureDetector(
             onTap: onAction,
             child: Text(action!,
                 style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
                     color: AppColors.orange)),
           ),
       ],

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/question.dart';
 import '../models/course.dart';
 import '../models/user.dart' as app_user;
@@ -7,10 +8,16 @@ import '../models/room.dart';
 import '../models/statistics.dart';
 import '../models/qsm_session.dart';
 import 'auth_service.dart';
+import 'webhook_service.dart';
 
 class AppState extends ChangeNotifier {
   final AuthService _authService = AuthService();
   bool _isAuthenticated = false;
+
+  // ── Realtime notification subscription ───────────────────────
+  RealtimeChannel? _notifChannel;
+  /// Callback called when a new room_join notification arrives (teacher)
+  void Function(String title, String body)? onNewNotification;
 
   // ── Authentication ────────────────────────────────────────────
   app_user.User? get currentUser    => _authService.currentUser;
@@ -45,6 +52,13 @@ class AppState extends ChangeNotifier {
   String _courseTitle   = '';
   String get courseTitle => _courseTitle;
 
+  String? _currentCourseId;
+  String? get currentCourseId => _currentCourseId;
+  set currentCourseId(String? value) {
+    _currentCourseId = value;
+    notifyListeners();
+  }
+
   String _courseSummary   = '';
   String get courseSummary => _courseSummary;
 
@@ -54,14 +68,12 @@ class AppState extends ChangeNotifier {
   // ── Données réelles Supabase (chargées dynamiquement) ─────────
 
   // Sessions récentes de l'étudiant
-  List<Map<String, dynamic>> _recentSessions = [];
-  List<Map<String, dynamic>> get recentSessions => _recentSessions;
+  List<Map<String, dynamic>> get recentSessions => _authService.recentSessions;
   bool _sessionsLoaded = false;
   bool get sessionsLoaded => _sessionsLoaded;
 
   // Scores hebdomadaires (courbe de performance)
-  List<Map<String, dynamic>> _weeklyScores = [];
-  List<Map<String, dynamic>> get weeklyScores => _weeklyScores;
+  List<Map<String, dynamic>> get weeklyScores => _authService.weeklyScores;
 
   // Cours de l'enseignant
   List<Map<String, dynamic>> _teacherCourses = [];
@@ -90,6 +102,12 @@ class AppState extends ChangeNotifier {
   GlobalStatistics? get globalStats => _globalStats;
   bool _globalStatsLoaded = false;
   bool get globalStatsLoaded => _globalStatsLoaded;
+
+  // Toutes les classes (pour création de room)
+  List<Classroom> _allClassrooms = [];
+  bool _allClassroomsLoaded = false;
+  List<Classroom> get allClassrooms => _allClassrooms;
+  bool get allClassroomsLoaded => _allClassroomsLoaded;
 
   // Données enfant (pour parent)
   Map<String, dynamic>? _childProfile;
@@ -123,14 +141,139 @@ class AppState extends ChangeNotifier {
   }
 
   // ── Chargement dynamique ──────────────────────────────────────
+  
+  // Notifications
+  List<Map<String, dynamic>> _notifications = [];
+  bool _notificationsLoaded = false;
+  List<Map<String, dynamic>> get notifications => _notifications;
+  bool get notificationsLoaded => _notificationsLoaded;
+
+  Future<void> loadNotifications() async {
+    _notifications = await _authService.fetchNotifications();
+    _notificationsLoaded = true;
+    notifyListeners();
+  }
+
+  Future<void> submitComplaint({
+    required String email,
+    required String subject,
+    required String description,
+  }) async {
+    await _authService.submitComplaint(
+      email: email,
+      subject: subject,
+      description: description,
+    );
+  }
+
+  int get unreadNotificationsCount => _notifications.where((n) => !(n['is_read'] ?? false)).length;
+
+  /// S'abonne aux notifications Realtime pour l'enseignant connecté
+  void subscribeToTeacherNotifications(String teacherId) {
+    _notifChannel?.unsubscribe();
+    _notifChannel = Supabase.instance.client
+        .channel('teacher_notifs_$teacherId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'notifications',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: teacherId,
+          ),
+          callback: (payload) {
+            final newRow = payload.newRecord;
+            final title = newRow['title']?.toString() ?? 'Notification';
+            final body  = newRow['body']?.toString()  ?? '';
+            // Ajouter en tête de liste
+            _notifications = [newRow, ..._notifications];
+            notifyListeners();
+            // Déclencher le callback UI (snackbar)
+            onNewNotification?.call(title, body);
+          },
+        )
+        .subscribe();
+  }
+
+  /// Se désabonne des notifications Realtime
+  void unsubscribeFromNotifications() {
+    _notifChannel?.unsubscribe();
+    _notifChannel = null;
+  }
+
+  /// Charge les données complètes de l'utilisateur (classes, stats, etc.)
+  Future<void> loadUserData() async {
+    if (currentUser == null) return;
+    await _authService.loadUserData();
+    notifyListeners();
+  }
+ 
+  /// Rejoindre une room par son code
+  Future<Map<String, dynamic>?> joinRoomByCode(String code) async {
+    final roomData = await _authService.fetchRoomByCode(code);
+    if (roomData == null) return null;
+
+    final roomId = roomData['id']?.toString();
+    if (roomId != null && currentUser != null) {
+      final alreadyDone = await _authService.hasCompletedSession(roomId: roomId);
+      if (alreadyDone) {
+        throw Exception('Vous avez déjà complété le QSM de cette room.');
+      }
+    }
+ 
+    final sessionData = roomData['quiz_sessions'];
+    final questionsData = roomData['questions'] as List<dynamic>? ?? [];
+    
+    if (questionsData.isEmpty) {
+      print('⚠️ joinRoomByCode: Aucune question trouvée pour cette room');
+      return null;
+    }
+
+    final questions = questionsData.map((q) => Question.fromJson(q)).toList();
+
+    // Utiliser les données de session si dispo, sinon fallback sur la room
+    final session = QsmSession(
+      id: sessionData?['id']?.toString() ?? roomData['qcm_session_id']?.toString() ?? 'session_tmp',
+      courseTitle: sessionData?['title'] ?? roomData['name'] ?? 'QSM',
+      questions: questions,
+      createdAt: DateTime.tryParse(sessionData?['created_at'] ?? roomData['created_at'] ?? '') ?? DateTime.now(),
+      timerMinutes: roomData['timer_minutes'],
+      roomId: roomData['id'].toString(),
+      classroomId: roomData['classroom_id']?.toString(),
+      userAnswers: List.filled(questions.length, null),
+    );
+ 
+    _currentSession = session;
+    _currentCourseId = sessionData?['course_id']?.toString() ?? roomData['qcm_session_id']?.toString();
+    notifyListeners();
+
+    // 🔔 Notifier l'enseignant qu'un élève a rejoint
+    final teacherId = roomData['teacher_id']?.toString();
+    if (teacherId != null && teacherId.isNotEmpty && currentUser != null) {
+      final studentName = currentUser!.fullName.isNotEmpty
+          ? currentUser!.fullName
+          : (currentUser!.email ?? 'Un élève');
+      final roomName = roomData['name']?.toString() ?? 'la room';
+      final roomId = roomData['id']?.toString() ?? '';
+      _authService.sendRoomJoinNotification(
+        teacherId: teacherId,
+        studentName: studentName,
+        roomName: roomName,
+        roomId: roomId,
+      );
+    }
+
+    return roomData;
+  }
+ 
 
   /// Charge les sessions récentes de l'étudiant connecté
   Future<void> loadStudentSessions() async {
     if (currentUser == null) return;
     _sessionsLoaded = false;
     notifyListeners();
-    _recentSessions = await _authService.fetchStudentRecentSessions(currentUser!.id);
-    _weeklyScores   = await _authService.fetchWeeklyScores(currentUser!.id);
+    await _authService.loadUserData();
     _sessionsLoaded = true;
     notifyListeners();
   }
@@ -142,14 +285,37 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     _teacherCourses       = await _authService.fetchTeacherCourses(currentUser!.id);
     _weeklyActivity       = await _authService.fetchTeacherWeeklyActivity(currentUser!.id);
+    await loadTeacherRooms(); // Charger les rooms
     _teacherCoursesLoaded = true;
     notifyListeners();
   }
 
-  /// Upload un cours vers Supabase
-  Future<void> uploadCourse(Map<String, dynamic> courseData) async {
-    await _authService.uploadCourse(courseData);
+  /// Charge les rooms de l'enseignant
+  Future<void> loadTeacherRooms() async {
+    if (currentUser == null) return;
+    await _authService.fetchTeacherRooms(currentUser!.id);
+    notifyListeners();
+  }
+
+  /// Sessions de la room sélectionnée (pour Notes)
+  List<Map<String, dynamic>> _currentRoomSessions = [];
+  bool _roomSessionsLoaded = false;
+  List<Map<String, dynamic>> get currentRoomSessions => _currentRoomSessions;
+  bool get roomSessionsLoaded => _roomSessionsLoaded;
+
+  Future<void> loadRoomSessions(String roomId) async {
+    _roomSessionsLoaded = false;
+    notifyListeners();
+    _currentRoomSessions = await _authService.fetchRoomSessions(roomId);
+    _roomSessionsLoaded = true;
+    notifyListeners();
+  }
+
+  /// Upload un cours vers Supabase et retourne l'ID
+  Future<String> uploadCourse(Map<String, dynamic> courseData) async {
+    final id = await _authService.uploadCourse(courseData);
     await loadTeacherCourses(); // Recharger la liste après l'upload
+    return id;
   }
 
   /// Charge les utilisateurs pour l'admin
@@ -176,6 +342,17 @@ class AppState extends ChangeNotifier {
     await loadAdminCourses();
   }
 
+  /// Crée un cours enseignant pour les QSM générés sans enregistrement initial
+  Future<String?> createTeacherCourse(Map<String, dynamic> courseData) async {
+    if (currentUser == null) return null;
+    final response = await _authService.createCourse({
+      ...courseData,
+      'teacher_id': currentUser!.id,
+    });
+    await loadTeacherCourses();
+    return response['id']?.toString();
+  }
+
   /// Met à jour un cours (admin)
   Future<void> updateCourse(String courseId, Map<String, dynamic> courseData) async {
     await _authService.updateCourse(courseId, courseData);
@@ -186,6 +363,7 @@ class AppState extends ChangeNotifier {
   Future<void> deleteCourse(String courseId) async {
     await _authService.deleteCourse(courseId);
     await loadAdminCourses();
+    await loadTeacherCourses();
   }
 
   /// Met à jour le profil utilisateur
@@ -242,6 +420,15 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     _niveaux = await _authService.fetchAllNiveaux();
     _niveauxLoaded = true;
+    notifyListeners();
+  }
+
+  /// Charge toutes les classes du système
+  Future<void> loadAllClassrooms() async {
+    _allClassroomsLoaded = false;
+    notifyListeners();
+    _allClassrooms = await _authService.fetchAllClassrooms();
+    _allClassroomsLoaded = true;
     notifyListeners();
   }
 
@@ -376,6 +563,17 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  Future<void> assignEtudiantToClasse({
+    required String studentId,
+    required String classeId,
+  }) async {
+    await _authService.assignEtudiantToClasse(
+      studentId: studentId,
+      classeId: classeId,
+    );
+    await loadAdminUsers(); // Recharger pour voir l'étudiant dans sa nouvelle classe
+  }
+
   // ─── Parents ────────────────────────────────────────────
   List<Map<String, dynamic>> _adminParents = [];
   bool _adminParentsLoaded = false;
@@ -449,11 +647,13 @@ class AppState extends ChangeNotifier {
     String title = '',
     String summary = '',
     List<String> keywords = const [],
+    String? courseId,
   }) {
     _questions     = questions;
     _courseTitle   = title;
     _courseSummary = summary;
     _keywords      = keywords;
+    _currentCourseId = courseId;
     notifyListeners();
   }
 
@@ -469,6 +669,35 @@ class AppState extends ChangeNotifier {
     if (_currentSession != null) {
       _currentSession!.userAnswers[questionIndex] = answerIndex;
       notifyListeners();
+    }
+  }
+
+  Future<void> loadQcmForCourse(String courseId, String courseTitle) async {
+    try {
+      final fetchedQuestions = await WebhookService().fetchQuestionsForCourse(courseId);
+      if (fetchedQuestions != null && fetchedQuestions.isNotEmpty) {
+        _questions = fetchedQuestions;
+        _courseTitle = courseTitle;
+        _currentCourseId = courseId;
+        
+        // Récupérer le vrai ID de session depuis Supabase
+        String? realSessionId = await _authService.fetchSessionIdByCourseId(courseId);
+        
+        // Utiliser l'ID de session réel, ou l'ID du cours (qui est un UUID), ou le timestamp en dernier recours
+        String finalSessionId = realSessionId ?? courseId;
+        
+        _currentSession = QsmSession(
+          id: finalSessionId,
+          courseTitle: courseTitle,
+          questions: fetchedQuestions,
+          createdAt: DateTime.now(),
+          userAnswers: List.filled(fetchedQuestions.length, null),
+        );
+        
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Error loading QCM for course: $e');
     }
   }
 
@@ -493,14 +722,28 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void completeSession() {
+  Future<void> completeSession() async {
     if (_currentSession != null) {
       _currentSession!.completedAt = DateTime.now();
+      
+      // Enregistrer le résultat dans la base de données
+      await _authService.saveSessionResult(
+        sessionId: _currentSession!.id,
+        courseId: _currentCourseId ?? _currentSession!.id,
+        roomId: _currentSession!.roomId,
+        classroomId: _currentSession!.classroomId,
+        score: _currentSession!.correctAnswers,
+        totalQuestions: _currentSession!.totalQuestions,
+        answers: {
+          'responses': _currentSession!.userAnswers,
+        },
+      );
+      
       notifyListeners();
     }
   }
 
-  void setCurrentSession(QsmSession session) {
+  void setCurrentSession(QsmSession? session) {
     _currentSession = session;
     notifyListeners();
   }
@@ -540,6 +783,27 @@ class AppState extends ChangeNotifier {
     _isAuthenticated = true;
     notifyListeners();
     return user;
+  }
+
+  Future<void> adminCreateUser({
+    required String email,
+    required String password,
+    required String firstName,
+    required String lastName,
+    required app_user.UserRole role,
+    required app_user.SubscriptionType subscription,
+  }) async {
+    await _authService.adminCreateUser(
+      email: email,
+      password: password,
+      firstName: firstName,
+      lastName: lastName,
+      role: role,
+      subscription: subscription,
+    );
+    await loadAdminUsers();
+    await loadGlobalStats();
+    notifyListeners();
   }
 
   Future<void> logout() async {
@@ -592,6 +856,7 @@ class AppState extends ChangeNotifier {
   Future<Room> createRoom({
     required String name,
     required String classroomId,
+    String? schoolClassId,
     required String qcmSessionId,
     int? timerMinutes,
     int maxParticipants = 50,
@@ -600,6 +865,7 @@ class AppState extends ChangeNotifier {
     final room = await _authService.createRoom(
       name: name,
       classroomId: classroomId,
+      schoolClassId: schoolClassId,
       qcmSessionId: qcmSessionId,
       timerMinutes: timerMinutes,
       maxParticipants: maxParticipants,
@@ -620,8 +886,6 @@ class AppState extends ChangeNotifier {
     _isLoading         = false;
     _loadingProgress   = 0.0;
     _loadingStep       = '';
-    _recentSessions    = [];
-    _weeklyScores      = [];
     _teacherCourses    = [];
     _adminUsers        = [];
     _globalStats       = null;
@@ -635,5 +899,13 @@ class AppState extends ChangeNotifier {
     _childDataLoaded   = false;
     _weeklyActivity    = {0:0,1:0,2:0,3:0,4:0,5:0,6:0};
     notifyListeners();
+  }
+
+  Future<List<Map<String, dynamic>>> fetchStudentsBySchoolClass(String schoolClassId) async {
+    return await _authService.fetchStudentsBySchoolClass(schoolClassId);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchClassroomStudents(String classroomId, {String? schoolClassId}) async {
+    return await _authService.fetchClassroomStudents(classroomId, schoolClassId: schoolClassId);
   }
 }

@@ -253,9 +253,14 @@ class _HomeTabState extends State<_HomeTab> {
               final score    = (s['score'] as int? ?? 0);
               final pct      = total > 0 ? (score * 100 ~/ total) : 0;
               final title    = (s['courses'] as Map?)?['title'] as String? ?? 'QSM sans titre';
-              final completedAt = s['completed_at'] != null
-                  ? DateTime.tryParse(s['completed_at']) ?? DateTime.now()
-                  : DateTime.now();
+              
+              final dateRaw = (s['completed_at'] != null 
+                  ? DateTime.tryParse(s['completed_at']) 
+                  : null) ?? (s['created_at'] != null
+                  ? DateTime.tryParse(s['created_at'])
+                  : null);
+              final completedAt = dateRaw != null ? dateRaw.toLocal() : DateTime.now();
+
               return _RecentQsmCard(
                 title: title,
                 score: pct,
@@ -573,12 +578,16 @@ class _PerformanceCurve extends StatelessWidget {
   Widget build(BuildContext context) {
     // Construire les données des 7 derniers jours
     final dayLabels = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-    final Map<int, List<int>> byDayIndex = {}; // 0=il y a 6j .. 6=aujourd'hui
+    final today = DateTime.now();
+    final todayStart = DateTime(today.year, today.month, today.day);
+    final Map<int, List<int>> byDayIndex = {};
     for (final s in weeklyScores) {
       if (s['completed_at'] != null && s['total_questions'] != null && (s['total_questions'] as int) > 0) {
         final date = DateTime.tryParse(s['completed_at']);
         if (date != null) {
-          final diff = DateTime.now().difference(date).inDays;
+          final localDate = date.toLocal();
+          final sessionStart = DateTime(localDate.year, localDate.month, localDate.day);
+          final diff = todayStart.difference(sessionStart).inDays;
           if (diff >= 0 && diff < 7) {
             final idx = 6 - diff;
             final pct = ((s['score'] as int? ?? 0) * 100 ~/ (s['total_questions'] as int));
@@ -1321,18 +1330,21 @@ class _ActivityItem extends StatelessWidget {
 class _ClassesTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final classrooms = context.watch<AppState>().userClassrooms;
+    final appState = context.watch<AppState>();
+    final classrooms = appState.userClassrooms;
+    final allSessions = appState.recentSessions;
     
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16).copyWith(bottom: 32),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return RefreshIndicator(
+      onRefresh: () => appState.loadUserData(),
+      child: ListView(
+        padding: const EdgeInsets.all(16).copyWith(bottom: 32),
         children: [
           _SectionHeader('Mes classes'),
           const SizedBox(height: 10),
           if (classrooms.isEmpty)
             Container(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.all(32),
+              width: double.infinity,
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
@@ -1340,31 +1352,27 @@ class _ClassesTab extends StatelessWidget {
               ),
               child: Column(
                 children: [
-                  Icon(LucideIcons.users, size: 40, color: AppColors.textSub),
-                  const SizedBox(height: 12),
-                  Text('Vous n\'êtes dans aucune classe', style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSub)),
-                  const SizedBox(height: 4),
-                  Text('Rejoignez une classe avec un code d\'invitation.', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSub), textAlign: TextAlign.center),
+                  Icon(LucideIcons.users, size: 48, color: AppColors.textSub.withOpacity(0.3)),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Vos classes apparaîtront ici automatiquement.',
+                    style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSub, fontWeight: FontWeight.w600),
+                    textAlign: TextAlign.center,
+                  ),
                 ],
               ),
             )
           else
-            ...classrooms.map((classroom) => _ClassCard(
-              name: classroom.name,
-              description: '${classroom.teacherName} · ${classroom.totalStudents} élèves',
-              progress: 0.0,
-              onTap: () {},
-            )),
-          const SizedBox(height: 20),
-          ElevatedButton.icon(
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const JoinClassScreen())),
-            icon: const Icon(LucideIcons.plus, size: 16),
-            label: const Text('Rejoindre une classe'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-            ),
-          ),
+            ...classrooms.map((classroom) {
+              final classSessions = allSessions.where((s) => s['classroom_id']?.toString() == classroom.id).toList();
+              return _ClassCard(
+                name: classroom.name,
+                description: '${classroom.teacherName} · ${classroom.totalStudents} élèves',
+                progress: 0.0,
+                sessions: classSessions,
+                onTap: () {},
+              );
+            }),
         ],
       ),
     );
@@ -1376,12 +1384,14 @@ class _ClassCard extends StatelessWidget {
   final String name;
   final String description;
   final double progress;
+  final List<Map<String, dynamic>> sessions;
   final VoidCallback onTap;
   
   const _ClassCard({
     required this.name,
     required this.description,
     required this.progress,
+    this.sessions = const [],
     required this.onTap,
   });
 
@@ -1394,8 +1404,15 @@ class _ClassCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border, width: 0.5),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.success.withOpacity(0.3), width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.success.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1403,15 +1420,15 @@ class _ClassCard extends StatelessWidget {
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
+                    color: AppColors.success.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Icon(
                     LucideIcons.users,
-                    size: 20,
-                    color: AppColors.primary,
+                    size: 22,
+                    color: AppColors.success,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1422,7 +1439,7 @@ class _ClassCard extends StatelessWidget {
                       Text(
                         name,
                         style: GoogleFonts.inter(
-                          fontSize: 14,
+                          fontSize: 16,
                           fontWeight: FontWeight.w700,
                           color: AppColors.text,
                         ),
@@ -1430,7 +1447,7 @@ class _ClassCard extends StatelessWidget {
                       Text(
                         description,
                         style: GoogleFonts.inter(
-                          fontSize: 12,
+                          fontSize: 13,
                           color: AppColors.textSub,
                         ),
                       ),
@@ -1439,12 +1456,13 @@ class _ClassCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             LinearProgressIndicator(
               value: progress,
-              backgroundColor: AppColors.border,
-              valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-              minHeight: 6,
+              backgroundColor: AppColors.success.withOpacity(0.1),
+              valueColor: AlwaysStoppedAnimation<Color>(AppColors.success),
+              borderRadius: BorderRadius.circular(4),
+              minHeight: 8,
             ),
             const SizedBox(height: 8),
             Row(
@@ -1453,21 +1471,81 @@ class _ClassCard extends StatelessWidget {
                 Text(
                   '${(progress * 100).toInt()}% complété',
                   style: GoogleFonts.inter(
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.textSub,
+                    color: AppColors.success,
                   ),
                 ),
                 Text(
                   '12/16 leçons',
                   style: GoogleFonts.inter(
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: AppColors.textSub,
                   ),
                 ),
               ],
             ),
+            if (sessions.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+              Text(
+                'QSM Complétés',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.text,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ...sessions.map((s) {
+                final score = (s['score'] as int? ?? 0);
+                final total = (s['total_questions'] as int? ?? 1);
+                final percentage = (total > 0) ? (score * 100 ~/ total) : 0;
+                final title = (s['courses'] as Map?)?['title'] as String? ?? 'QSM';
+                
+                Color scoreColor = AppColors.success;
+                if (percentage < 50) scoreColor = AppColors.error;
+                else if (percentage < 70) scoreColor = AppColors.info;
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 6.0),
+                  child: Row(
+                    children: [
+                      Icon(LucideIcons.fileText, size: 14, color: AppColors.textSub),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: AppColors.textSub,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: scoreColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '$percentage%',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: scoreColor,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ]
           ],
         ),
       ),
@@ -1479,8 +1557,52 @@ class _ClassCard extends StatelessWidget {
 class _RoomsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    // Rooms : pas de table rooms côté étudiant pour l'instant → on garde la section "rejoindre"
-    final List<Map<String, dynamic>> rooms = [];
+    final state = context.watch<AppState>();
+    
+    // Filtrer les sessions récentes qui ont un room_id (donc qui viennent d'un room)
+    final roomSessions = state.recentSessions.where((s) => s['room_id'] != null).toList();
+    
+    final List<Map<String, dynamic>> rooms = roomSessions.map((s) {
+      final courseMap = s['courses'] as Map?;
+      final title = courseMap?['title'] as String? ?? 'Room Session';
+      final subject = courseMap?['subject'] as String? ?? 'QSM';
+      final score = s['score'] as int? ?? 0;
+      final total = s['total_questions'] as int? ?? 1;
+      final progress = total > 0 ? (score / total) : 0.0;
+      
+      final dateRaw = (s['completed_at'] != null 
+          ? DateTime.tryParse(s['completed_at']) 
+          : null) ?? (s['created_at'] != null
+          ? DateTime.tryParse(s['created_at'])
+          : null);
+      
+      String timeStr = 'À l\'instant';
+      if (dateRaw != null) {
+        final date = dateRaw.toLocal();
+        final diff = DateTime.now().difference(date);
+        
+        if (diff.inDays > 7) {
+          timeStr = '${date.day}/${date.month} à ${date.hour}h${date.minute.toString().padLeft(2, '0')}';
+        } else if (diff.inDays > 0) {
+          timeStr = 'Il y a ${diff.inDays}j';
+        } else if (diff.inHours > 0) {
+          timeStr = 'Il y a ${diff.inHours}h';
+        } else if (diff.inMinutes > 0) {
+          timeStr = 'Il y a ${diff.inMinutes}min';
+        }
+      }
+
+      return {
+        'code': 'Session',
+        'title': title,
+        'subject': subject,
+        'teacher': '',
+        'time': timeStr,
+        'status': 'completed',
+        'progress': progress,
+        'color': progress >= 0.8 ? AppColors.success : (progress >= 0.5 ? AppColors.info : AppColors.error),
+      };
+    }).toList();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16).copyWith(bottom: 32),
@@ -1574,17 +1696,36 @@ class _RoomsTab extends StatelessWidget {
           _SectionHeader('Rooms récents'),
           const SizedBox(height: 12),
           
-          // Rooms List
-          ...rooms.map((room) => _RoomCard(
-            code: room['code'] as String,
-            title: room['title'] as String,
-            subject: room['subject'] as String,
-            teacher: room['teacher'] as String,
-            time: room['time'] as String,
-            status: room['status'] as String,
-            progress: room['progress'] as double,
-            color: room['color'] as Color,
-          )).toList(),
+          if (rooms.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border, width: 0.5),
+              ),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(LucideIcons.history, size: 40, color: AppColors.textSub),
+                    const SizedBox(height: 12),
+                    Text('Aucun room récent',
+                        style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSub, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            )
+          else
+            ...rooms.map((room) => _RoomCard(
+              code: room['code'] as String,
+              title: room['title'] as String,
+              subject: room['subject'] as String,
+              teacher: room['teacher'] as String,
+              time: room['time'] as String,
+              status: room['status'] as String,
+              progress: room['progress'] as double,
+              color: room['color'] as Color,
+            )).toList(),
         ],
       ),
     );
@@ -1726,27 +1867,136 @@ class _LibraryTab extends StatefulWidget {
 }
 
 class _LibraryTabState extends State<_LibraryTab> {
+  int _selectedFiliere = 0;
   int _selectedLevel = 0;
   int _selectedSubject = 0;
-  final Set<int> _expandedSemesters = {};
+  final Set<int> _expandedSemesters = {0};
 
-  static const _levels = [
-    '1AC', '2AC', '3AC', 'TCS', '1BAC SM', '1BAC EXP', '2BAC',
-  ];
+  static const _subjectAliases = <String, List<String>>{
+    'Sciences Vie': ['Sciences Vie', 'SVT', 'Biologie', 'sciences vie', 'svt'],
+    'Physique-Chimie': ['Physique-Chimie', 'Physique', 'Chimie', 'physique-chimie', 'physique chimie'],
+    'Maths': ['Maths', 'Mathématiques', 'maths', 'mathématiques'],
+    'Français': ['Français', 'Francais', 'français', 'francais'],
+    'Anglais': ['Anglais', 'anglais'],
+    'Histoire-Géo': ['Histoire-Géo', 'Histoire', 'Géographie', 'histoire-géo'],
+  };
 
-  static const _subjects = [
-    {'label': 'Mathématiques', 'color': AppColors.primary},
-    {'label': 'Physique', 'color': AppColors.info},
-    {'label': 'Chimie', 'color': AppColors.success},
-    {'label': 'SVT', 'color': AppColors.warning},
+  final List<Color> _fallbackColors = [
+    AppColors.primary, AppColors.info, AppColors.success, 
+    AppColors.warning, AppColors.error, Colors.purple
   ];
 
   @override
-  Widget build(BuildContext context) {
-    final courses = [
-      'Algèbre', 'Géométrie', 'Fonctions', 'Statistiques',
-      'Mécanique', 'Électricité', 'Optique', 'Thermodynamique',
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final s = context.read<AppState>();
+      if (!s.adminCoursesLoaded) s.loadAdminCourses();
+      if (!s.filieresLoaded) s.loadFilieres();
+      if (!s.niveauxLoaded) s.loadNiveaux();
+      if (!s.matieresLoaded) s.loadMatieres();
+    });
+  }
+
+  List<Map<String, dynamic>> _getFilteredCourses(List<Map<String, dynamic>> niveaux, List<Map<String, dynamic>> matieres) {
+    if (niveaux.isEmpty || matieres.isEmpty) return [];
+    
+    // Safety check for indices
+    if (_selectedLevel >= niveaux.length) _selectedLevel = 0;
+    if (_selectedSubject >= matieres.length) _selectedSubject = 0;
+
+    final level = (niveaux[_selectedLevel]['nom'] as String? ?? '').trim();
+    final subject = (matieres[_selectedSubject]['nom'] as String? ?? '').trim();
+    final aliases = _subjectAliases[subject] ?? [subject];
+
+    final allCourses = context.read<AppState>().adminCourses;
+
+    final filtered = allCourses.where((c) {
+      final courseFiliere = (c['filiere'] as String? ?? '').trim();
+      final courseSubject = (c['subject'] as String? ?? '').trim();
+      
+      final levelMatch = courseFiliere.isEmpty || courseFiliere == level || courseFiliere.contains(level) || level.contains(courseFiliere);
+      final subjectMatch = aliases.any((alias) =>
+          courseSubject.toLowerCase() == alias.toLowerCase());
+          
+      return levelMatch && subjectMatch;
+    }).toList();
+
+    return filtered;
+  }
+
+  List<Map<String, dynamic>> _getCurrentSemesters(List<Map<String, dynamic>> niveaux, List<Map<String, dynamic>> matieres) {
+    final filtered = _getFilteredCourses(niveaux, matieres);
+
+    final sem1Courses = filtered.where((c) {
+      final desc = (c['description'] as String? ?? '').toLowerCase();
+      final sem = (c['semester'] as String? ?? '').toLowerCase();
+      return sem.contains('semestre 1') || sem.contains('semester 1') || desc.contains('semestre 1');
+    }).toList();
+
+    final sem2Courses = filtered.where((c) {
+      final desc = (c['description'] as String? ?? '').toLowerCase();
+      final sem = (c['semester'] as String? ?? '').toLowerCase();
+      return sem.contains('semestre 2') || sem.contains('semester 2') || desc.contains('semestre 2');
+    }).toList();
+
+    final untagged = filtered.where((c) {
+      final desc = (c['description'] as String? ?? '').toLowerCase();
+      final sem = (c['semester'] as String? ?? '').toLowerCase();
+      return !sem.contains('semestre') && !sem.contains('semester') &&
+             !desc.contains('semestre 1') && !desc.contains('semestre 2');
+    }).toList();
+
+    final allSem1 = [...sem1Courses, ...untagged];
+
+    return [
+      {
+        'title': 'Semestre 1',
+        'courses': allSem1,
+      },
+      {
+        'title': 'Semestre 2',
+        'courses': sem2Courses,
+      },
     ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    final filieres = state.filieres;
+    final niveaux = state.niveaux;
+    final allMatieres = state.matieres;
+    
+    if (!state.filieresLoaded || !state.niveauxLoaded || !state.matieresLoaded || !state.adminCoursesLoaded) {
+      return const Center(child: Padding(
+        padding: EdgeInsets.all(40),
+        child: CircularProgressIndicator(),
+      ));
+    }
+
+    if (filieres.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(40),
+          child: Text('Aucune filière disponible', style: GoogleFonts.inter(color: AppColors.textSub)),
+        ),
+      );
+    }
+
+    if (_selectedFiliere >= filieres.length) _selectedFiliere = 0;
+
+    final selectedFiliereId = filieres[_selectedFiliere]['id']?.toString();
+    final niveauxForFiliere = niveaux.where((n) => n['filiere_id']?.toString() == selectedFiliereId).toList();
+
+    if (_selectedLevel >= niveauxForFiliere.length) _selectedLevel = 0;
+
+    final selectedNiveauId = niveauxForFiliere.isNotEmpty ? niveauxForFiliere[_selectedLevel]['id']?.toString() : null;
+    final matieres = allMatieres.where((m) => m['niveau_id']?.toString() == selectedNiveauId).toList();
+
+    if (_selectedSubject >= matieres.length && matieres.isNotEmpty) _selectedSubject = 0;
+
+    final semesters = _getCurrentSemesters(niveauxForFiliere, matieres);
     
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16).copyWith(bottom: 32),
@@ -1756,21 +2006,26 @@ class _LibraryTabState extends State<_LibraryTab> {
           _SectionHeader('Ma bibliothèque'),
           const SizedBox(height: 10),
           
-          // Level navigation
+          // Filière navigation
           Container(
             height: 40,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
-              itemCount: _levels.length,
+              itemCount: filieres.length,
               itemBuilder: (context, index) {
-                final isSelected = index == _selectedLevel;
+                final isSelected = index == _selectedFiliere;
+                final nom = filieres[index]['nom'] as String? ?? 'Filière';
                 return Container(
                   margin: const EdgeInsets.only(right: 8),
                   child: Material(
                     color: Colors.transparent,
                     child: InkWell(
                       borderRadius: BorderRadius.circular(20),
-                      onTap: () => setState(() => _selectedLevel = index),
+                      onTap: () => setState(() {
+                        _selectedFiliere = index;
+                        _selectedLevel = 0;
+                        _selectedSubject = 0;
+                      }),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -1784,11 +2039,11 @@ class _LibraryTabState extends State<_LibraryTab> {
                         ),
                         child: Center(
                           child: Text(
-                            _levels[index],
+                            nom,
                             style: GoogleFonts.inter(
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
-                              color: isSelected ? Colors.white : AppColors.textSecondary,
+                              color: isSelected ? Colors.white : AppColors.textSub,
                             ),
                           ),
                         ),
@@ -1799,17 +2054,72 @@ class _LibraryTabState extends State<_LibraryTab> {
               },
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
+          
+          // Level navigation
+          if (niveauxForFiliere.isNotEmpty) ...[
+            Container(
+              height: 36,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: niveauxForFiliere.length,
+                itemBuilder: (context, index) {
+                  final isSelected = index == _selectedLevel;
+                  final nom = niveauxForFiliere[index]['nom'] as String? ?? 'Niveau';
+                  return Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(18),
+                        onTap: () => setState(() {
+                          _selectedLevel = index;
+                          _selectedSubject = 0;
+                        }),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: isSelected ? AppColors.primary.withOpacity(0.1) : Colors.transparent,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isSelected ? AppColors.primary : AppColors.border,
+                              width: 1,
+                            ),
+                          ),
+                          child: Center(
+                            child: Text(
+                              nom,
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: isSelected ? AppColors.primary : AppColors.textSub,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
           
           // Subject chips
           Container(
             height: 40,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
-              itemCount: _subjects.length,
+              itemCount: matieres.length,
               itemBuilder: (context, index) {
                 final isSelected = index == _selectedSubject;
-                final subject = _subjects[index];
+                final matiere = matieres[index];
+                final label = matiere['nom'] as String? ?? 'Matière';
+                // Pick a color for the subject
+                final subjectColor = _fallbackColors[index % _fallbackColors.length];
+                
                 return Container(
                   margin: const EdgeInsets.only(right: 8),
                   child: Material(
@@ -1821,16 +2131,16 @@ class _LibraryTabState extends State<_LibraryTab> {
                         duration: const Duration(milliseconds: 200),
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         decoration: BoxDecoration(
-                          color: isSelected ? subject['color'] as Color : AppColors.background,
+                          color: isSelected ? subjectColor : AppColors.background,
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                            color: isSelected ? subject['color'] as Color : AppColors.border,
+                            color: isSelected ? subjectColor : AppColors.border,
                             width: 1,
                           ),
                         ),
                         child: Center(
                           child: Text(
-                            subject['label'] as String,
+                            label,
                             style: GoogleFonts.inter(
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
@@ -1848,8 +2158,11 @@ class _LibraryTabState extends State<_LibraryTab> {
           const SizedBox(height: 20),
           
           // Semesters list
-          ...List.generate(2, (index) {
-            final semesterTitle = 'Semestre ${index + 1}';
+          ...semesters.asMap().entries.map((entry) {
+            final index = entry.key;
+            final semester = entry.value;
+            final title = semester['title'] as String;
+            final courses = semester['courses'] as List<Map<String, dynamic>>;
             final isExpanded = _expandedSemesters.contains(index);
             
             return Container(
@@ -1873,7 +2186,7 @@ class _LibraryTabState extends State<_LibraryTab> {
                       child: Row(
                         children: [
                           Text(
-                            semesterTitle,
+                            title,
                             style: GoogleFonts.inter(
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
@@ -1908,25 +2221,35 @@ class _LibraryTabState extends State<_LibraryTab> {
                     child: isExpanded
                         ? Padding(
                             padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-                            child: GridView.builder(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                mainAxisSpacing: 12,
-                                crossAxisSpacing: 12,
-                                childAspectRatio: 1.2,
-                              ),
-                              itemCount: courses.length,
-                              itemBuilder: (context, i) => _FolderCard(title: courses[i]),
-                            ),
+                            child: courses.isEmpty 
+                              ? Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 24),
+                                  child: Center(
+                                    child: Text('Aucun cours disponible', style: GoogleFonts.inter(color: AppColors.textSub)),
+                                  ),
+                                )
+                              : GridView.builder(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 2,
+                                    mainAxisSpacing: 12,
+                                    crossAxisSpacing: 12,
+                                    childAspectRatio: 1.2,
+                                  ),
+                                  itemCount: courses.length,
+                                  itemBuilder: (context, i) {
+                                    final course = courses[i];
+                                    return _FolderCard(title: course['title'] as String? ?? 'Sans titre');
+                                  },
+                                ),
                           )
                         : const SizedBox.shrink(),
                   ),
                 ],
               ),
             );
-          }),
+          }).toList(),
         ],
       ),
     );

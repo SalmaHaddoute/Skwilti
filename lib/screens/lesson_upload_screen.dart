@@ -6,18 +6,21 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../services/app_state.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../widgets/common_widgets.dart';
 
 class LessonUploadScreen extends StatefulWidget {
   final String filiere;
   final String subject;
   final String semester;
+  final Map<String, dynamic>? courseToEdit;
   
   const LessonUploadScreen({
     super.key,
     required this.filiere,
     required this.subject,
     required this.semester,
+    this.courseToEdit,
   });
 
   @override
@@ -34,6 +37,9 @@ class _LessonUploadScreenState extends State<LessonUploadScreen> {
   String _progressStep = '';
   late String _selectedSemester;
 
+  final TextEditingController _titleController = TextEditingController();
+  final TextEditingController _descController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -41,6 +47,16 @@ class _LessonUploadScreenState extends State<LessonUploadScreen> {
       _selectedSemester = widget.semester;
     } else {
       _selectedSemester = 'Semestre 1';
+    }
+
+    if (widget.courseToEdit != null) {
+      _lessonTitle = widget.courseToEdit!['title'] as String? ?? '';
+      _titleController.text = _lessonTitle;
+
+      _lessonDescription = widget.courseToEdit!['description'] as String? ?? '';
+      _descController.text = _lessonDescription;
+
+      _fileName = widget.courseToEdit!['file_name'] as String? ?? widget.courseToEdit!['fileName'] as String? ?? 'Fichier_existant.pdf';
     }
   }
 
@@ -68,8 +84,35 @@ class _LessonUploadScreenState extends State<LessonUploadScreen> {
     }
   }
 
+  Future<void> _uploadFileAndCreateDocument(String courseId, File file, String fileName) async {
+    final supabase = Supabase.instance.client;
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final storagePath = 'uploads/${timestamp}_$fileName';
+    
+    // 1. Upload to storage
+    await supabase.storage
+        .from('courses')
+        .upload(storagePath, file);
+        
+    // 2. Get public URL
+    final fileUrl = supabase.storage
+        .from('courses')
+        .getPublicUrl(storagePath);
+        
+    // 3. Create document entry
+    final teacherId = supabase.auth.currentUser?.id;
+    await supabase.from('documents').insert({
+      'user_id': teacherId,
+      'file_url': fileUrl,
+      'course_id': courseId,
+      'status': 'pending',
+      'created_at': DateTime.now().toIso8601String(),
+    });
+  }
+
   Future<void> _uploadLesson() async {
-    if (_selectedFile == null) {
+    final isEdit = widget.courseToEdit != null;
+    if (!isEdit && _selectedFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Veuillez d\'abord sélectionner un fichier'),
@@ -92,32 +135,55 @@ class _LessonUploadScreenState extends State<LessonUploadScreen> {
     setState(() {
       _isUploading = true;
       _progress = 0.0;
-      _progressStep = 'Préparation de l\'upload...';
+      _progressStep = isEdit ? 'Enregistrement des modifications...' : 'Préparation de l\'upload...';
     });
 
     try {
       await _simulateUploadSteps();
-      
-      // Simulate successful upload
       await Future.delayed(const Duration(seconds: 1));
       
       if (mounted) {
-        // Add lesson to AppState / Supabase
-        await context.read<AppState>().uploadCourse({
-          'title': _lessonTitle,
-          'description': 'Semestre: $_selectedSemester${_lessonDescription.isNotEmpty ? '\n$_lessonDescription' : ''}',
-          'subject': widget.subject,
-          'file_name': _fileName,
-        });
+        String courseId;
+        if (isEdit) {
+          courseId = widget.courseToEdit!['id'].toString();
+          final descPrefix = 'Semestre: $_selectedSemester';
+          final fullDesc = _lessonDescription.startsWith('Semestre:') 
+              ? _lessonDescription 
+              : '$descPrefix${_lessonDescription.isNotEmpty ? '\n$_lessonDescription' : ''}';
+              
+          await context.read<AppState>().updateCourse(courseId, {
+            'title': _lessonTitle,
+            'description': fullDesc,
+            'subject': widget.subject,
+            if (_fileName != null) 'file_name': _fileName,
+          });
+        } else {
+          courseId = await context.read<AppState>().uploadCourse({
+            'title': _lessonTitle,
+            'description': 'Filière: ${widget.filiere} | Semestre: $_selectedSemester${_lessonDescription.isNotEmpty ? '\n$_lessonDescription' : ''}',
+            'subject': widget.subject,
+            'file_name': _fileName,
+          });
+        }
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Leçon uploadée avec succès!'),
-            backgroundColor: AppColors.success,
-          ),
-        );
-        
-        Navigator.pop(context);
+        // Si un fichier physique a été sélectionné, on l'téléverse réellement
+        if (_selectedFile != null && _fileName != null) {
+          setState(() {
+            _progressStep = 'Téléversement du fichier PDF réel...';
+          });
+          await _uploadFileAndCreateDocument(courseId, _selectedFile!, _fileName!);
+        }
+
+        if (mounted) {
+          await context.read<AppState>().loadTeacherCourses();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(isEdit ? 'Leçon modifiée avec succès!' : 'Leçon uploadée avec succès!'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+          Navigator.pop(context);
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -160,7 +226,7 @@ class _LessonUploadScreenState extends State<LessonUploadScreen> {
         backgroundColor: Colors.white,
         elevation: 0,
         title: Text(
-          'Uploader une leçon',
+          widget.courseToEdit != null ? 'Modifier la leçon' : 'Uploader une leçon',
           style: GoogleFonts.inter(
             fontSize: 18,
             fontWeight: FontWeight.w700,
@@ -175,7 +241,7 @@ class _LessonUploadScreenState extends State<LessonUploadScreen> {
           TextButton(
             onPressed: _isUploading ? null : _uploadLesson,
             child: Text(
-              'Uploader',
+              widget.courseToEdit != null ? 'Enregistrer' : 'Uploader',
               style: GoogleFonts.inter(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
@@ -367,6 +433,7 @@ class _LessonUploadScreenState extends State<LessonUploadScreen> {
             children: [
               // Title field
               TextField(
+                controller: _titleController,
                 onChanged: (value) => setState(() => _lessonTitle = value),
                 decoration: InputDecoration(
                   labelText: 'Titre de la leçon',
@@ -397,6 +464,7 @@ class _LessonUploadScreenState extends State<LessonUploadScreen> {
               
               // Description field
               TextField(
+                controller: _descController,
                 onChanged: (value) => setState(() => _lessonDescription = value),
                 maxLines: 3,
                 decoration: InputDecoration(

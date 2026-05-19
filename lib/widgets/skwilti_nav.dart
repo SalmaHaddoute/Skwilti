@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -80,7 +81,6 @@ class _NotificationBell extends StatefulWidget {
 }
 
 class _NotificationBellState extends State<_NotificationBell> with SingleTickerProviderStateMixin {
-  int _count = 3;
   late AnimationController _shake;
 
   @override
@@ -92,17 +92,19 @@ class _NotificationBellState extends State<_NotificationBell> with SingleTickerP
   void dispose() { _shake.dispose(); super.dispose(); }
 
   void _open() {
+    context.read<AppState>().loadNotifications();
     _shake.forward().then((_) => _shake.reverse());
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _NotificationsSheet(onClose: () { setState(() => _count = 0); Navigator.pop(context); }),
-    ).then((_) => setState(() => _count = 0));
+      builder: (_) => _NotificationsSheet(onClose: () => Navigator.pop(context)),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final count = context.watch<AppState>().unreadNotificationsCount;
     return GestureDetector(
       onTap: _open,
       child: Stack(
@@ -124,13 +126,13 @@ class _NotificationBellState extends State<_NotificationBell> with SingleTickerP
               child: const Icon(LucideIcons.bell, size: 16, color: AppColors.text),
             ),
           ),
-          if (_count > 0)
+          if (count > 0)
             Positioned(
               top: -3, right: -3,
               child: Container(
                 width: 18, height: 18,
                 decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
-                child: Center(child: Text('$_count', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.white))),
+                child: Center(child: Text('$count', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.white))),
               ),
             ),
         ],
@@ -223,16 +225,13 @@ class _NotificationsSheet extends StatelessWidget {
   final VoidCallback onClose;
   const _NotificationsSheet({required this.onClose});
 
-  static const _items = [
-    (LucideIcons.checkCircle, 'QSM terminé !',        'Biologie Cellulaire — Score 87%', '2 min',  AppColors.success),
-    (LucideIcons.users,     'Nouvel étudiant',       'Karim L. a rejoint votre classe',  '15 min', AppColors.info),
-    (LucideIcons.clock,        'Timer expiré',          'Room SKW-4821 terminée',           '1h',     AppColors.warning),
-    (LucideIcons.award,         'Points gagnés !',       '+50 pts pour le QSM du jour',      '2h',     AppColors.primary),
-  ];
-
   @override
   Widget build(BuildContext context) {
+    final notifications = context.watch<AppState>().notifications;
+    final loaded = context.watch<AppState>().notificationsLoaded;
+
     return Container(
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.75),
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -253,33 +252,165 @@ class _NotificationsSheet extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          ..._items.map((n) => _NotifTile(icon: n.$1, title: n.$2, sub: n.$3, time: n.$4, color: n.$5)),
+          if (!loaded)
+            const Padding(
+              padding: EdgeInsets.all(40),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (notifications.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(40),
+              child: Column(
+                children: [
+                  Icon(LucideIcons.bellOff, size: 48, color: AppColors.textSub.withOpacity(0.2)),
+                  const SizedBox(height: 16),
+                  Text('Aucune notification', style: GoogleFonts.inter(color: AppColors.textSub)),
+                ],
+              ),
+            )
+          else
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: notifications.length,
+                itemBuilder: (context, index) {
+                  final n = notifications[index];
+                  final data = n['data'] as Map<String, dynamic>?;
+                  final type = n['type']?.toString();
+                  final roomCode = data?['room_code']?.toString();
+
+                  return _NotifTile(
+                    id: n['id'].toString(),
+                    title: n['title'] ?? '',
+                    sub: n['message'] ?? '',
+                    time: _formatTime(n['created_at']),
+                    icon: _getIcon(type),
+                    color: _getColor(type),
+                    roomCode: roomCode,
+                    isRead: n['is_read'] ?? false,
+                  );
+                },
+              ),
+            ),
         ],
       ),
     );
   }
+
+  String _formatTime(String? dateStr) {
+    if (dateStr == null) return '';
+    final date = DateTime.tryParse(dateStr);
+    if (date == null) return '';
+    final diff = DateTime.now().difference(date);
+    if (diff.inMinutes < 1) return 'À l\'instant';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} min';
+    if (diff.inHours < 24) return '${diff.inHours}h';
+    return '${diff.inDays}j';
+  }
+
+  IconData _getIcon(String? type) {
+    switch (type) {
+      case 'room_created': return LucideIcons.rocket;
+      case 'qsm_completed': return LucideIcons.checkCircle;
+      case 'achievement': return LucideIcons.award;
+      case 'room_join': return LucideIcons.userPlus;
+      default: return LucideIcons.bell;
+    }
+  }
+
+  Color _getColor(String? type) {
+    switch (type) {
+      case 'room_created': return AppColors.warning;
+      case 'qsm_completed': return AppColors.success;
+      case 'achievement': return AppColors.primary;
+      case 'room_join': return AppColors.primary;
+      default: return AppColors.info;
+    }
+  }
 }
 
 class _NotifTile extends StatelessWidget {
-  final IconData icon; final String title, sub, time; final Color color;
-  const _NotifTile({required this.icon, required this.title, required this.sub, required this.time, required this.color});
+  final String id;
+  final String title, sub, time;
+  final IconData icon;
+  final Color color;
+  final String? roomCode;
+  final bool isRead;
+
+  const _NotifTile({
+    required this.id,
+    required this.title,
+    required this.sub,
+    required this.time,
+    required this.icon,
+    required this.color,
+    this.roomCode,
+    required this.isRead,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final emojiRegExp = RegExp(
+      r'[\u{1F300}-\u{1F9FF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]',
+      unicode: true,
+    );
+    final cleanTitle = title.replaceAll(emojiRegExp, '').trim();
+    final cleanSub = sub.replaceAll(emojiRegExp, '').trim();
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border, width: 0.5)),
-      child: Row(children: [
-        Container(width: 36, height: 36, decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
-          child: Icon(icon, size: 17, color: color)),
-        const SizedBox(width: 12),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(title, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)),
-          Text(sub, style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSecondary)),
-        ])),
-        Text(time, style: GoogleFonts.inter(fontSize: 10, color: AppColors.textSub)),
-      ]),
+      decoration: BoxDecoration(
+        color: isRead ? AppColors.background : color.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: isRead ? AppColors.border : color.withOpacity(0.3), width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Container(width: 36, height: 36, decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
+              child: Icon(icon, size: 17, color: color)),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(cleanTitle, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)),
+              Text(cleanSub, style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSecondary)),
+            ])),
+            Text(time, style: GoogleFonts.inter(fontSize: 10, color: AppColors.textSub)),
+          ]),
+          if (roomCode != null) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Spacer(),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: roomCode!));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Code $roomCode copié !'),
+                        backgroundColor: AppColors.success,
+                        behavior: SnackBarBehavior.floating,
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                  icon: const Icon(LucideIcons.copy, size: 12),
+                  label: Text('Copier le code : $roomCode', style: const TextStyle(fontSize: 11)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                    minimumSize: const Size(0, 32),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -308,7 +439,12 @@ class SkwiltiBottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isFiveItems = items.length == 5;
+    final int itemCount = items.length;
+    final double iconSize = itemCount > 5 ? 12.0 : (itemCount == 5 ? 16.0 : 20.0);
+    final double textSize = itemCount > 5 ? 7.0 : (itemCount == 5 ? 8.0 : 10.0);
+    final double bgWidth = itemCount > 5 ? 32.0 : (itemCount == 5 ? 38.0 : 44.0);
+    final double bgHeight = itemCount > 5 ? 12.0 : (itemCount == 5 ? 16.0 : 24.0);
+
     return Container(
       height: 56,
       decoration: const BoxDecoration(
@@ -316,42 +452,52 @@ class SkwiltiBottomNav extends StatelessWidget {
         border: Border(top: BorderSide(color: AppColors.border, width: 0.5)),
         boxShadow: [BoxShadow(color: Color(0x0A000000), blurRadius: 20, offset: Offset(0, -4))],
       ),
-      child: Row(
-        children: items.asMap().entries.map((e) {
-          final i = e.key; final item = e.value; final sel = i == currentIndex;
-          return Expanded(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => onTap(i),
-              child: Padding(
-                padding: EdgeInsets.zero,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      width: isFiveItems ? 38 : 44, 
-                      height: isFiveItems ? 18 : 28,
-                      decoration: BoxDecoration(
-                        color: sel ? AppColors.primaryLight : Colors.transparent,
-                        borderRadius: BorderRadius.circular(20),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12.0),
+        child: Row(
+          children: items.asMap().entries.map((e) {
+            final i = e.key; final item = e.value; final sel = i == currentIndex;
+            return Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => onTap(i),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: bgWidth,
+                        height: bgHeight,
+                        decoration: BoxDecoration(
+                          color: sel ? AppColors.primaryLight : Colors.transparent,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Icon(sel ? (item.activeIcon ?? item.icon) : item.icon,
+                          size: iconSize, 
+                          color: sel ? AppColors.primary : AppColors.textSub),
                       ),
-                      child: Icon(sel ? (item.activeIcon ?? item.icon) : item.icon,
-                        size: isFiveItems ? 16 : 20, 
-                        color: sel ? AppColors.primary : AppColors.textSub),
-                    ),
-                    const SizedBox(height: 1),
-                    Text(item.label, style: GoogleFonts.inter(
-                      fontSize: isFiveItems ? 8 : 10,
-                      fontWeight: sel ? FontWeight.w700 : FontWeight.w600,
-                      color: sel ? AppColors.primary : AppColors.textSub,
-                    )),
-                  ],
+                      const SizedBox(height: 2),
+                      Text(
+                        item.label, 
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          fontSize: textSize,
+                          fontWeight: sel ? FontWeight.w700 : FontWeight.w600,
+                          color: sel ? AppColors.primary : AppColors.textSub,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          );
-        }).toList(),
+            );
+          }).toList(),
+        ),
       ),
     );
   }

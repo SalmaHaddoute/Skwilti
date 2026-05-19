@@ -26,6 +26,7 @@ class User {
   final DateTime? dailyQsmResetDate;
   final String? linkedChildId; // For parents
   final String? linkedParentIds; // For students (JSON array)
+  final String? classeId; // Linked school class ID
 
   const User({
     required this.id,
@@ -42,6 +43,7 @@ class User {
     this.dailyQsmResetDate,
     this.linkedChildId,
     this.linkedParentIds,
+    this.classeId,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -70,6 +72,7 @@ class User {
           : null,
       linkedChildId: json['linkedChildId']?.toString(),
       linkedParentIds: json['linkedParentIds']?.toString(),
+      classeId: json['classeId']?.toString() ?? json['classe_id']?.toString(),
     );
   }
 
@@ -89,6 +92,7 @@ class User {
       'dailyQsmResetDate': dailyQsmResetDate?.toIso8601String(),
       'linkedChildId': linkedChildId,
       'linkedParentIds': linkedParentIds,
+      'classeId': classeId,
     };
   }
 
@@ -131,6 +135,7 @@ class User {
     DateTime? dailyQsmResetDate,
     String? linkedChildId,
     String? linkedParentIds,
+    String? classeId,
   }) {
     return User(
       id: id ?? this.id,
@@ -147,6 +152,7 @@ class User {
       dailyQsmResetDate: dailyQsmResetDate ?? this.dailyQsmResetDate,
       linkedChildId: linkedChildId ?? this.linkedChildId,
       linkedParentIds: linkedParentIds ?? this.linkedParentIds,
+      classeId: classeId ?? this.classeId,
     );
   }
 }

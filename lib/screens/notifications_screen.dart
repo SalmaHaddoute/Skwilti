@@ -56,7 +56,7 @@ class NotificationsScreen extends StatelessWidget {
             isRead: true,
           ),
           _NotificationItem(
-            icon: LucideIcons.zap,
+            icon: LucideIcons.rocket,
             title: 'Room créée avec succès',
             message: 'La room "Test rapide" a été créée',
             time: 'Il y a 2 jours',

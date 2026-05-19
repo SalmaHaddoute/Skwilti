@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import '../services/webhook_service.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../services/app_state.dart';
@@ -119,15 +120,83 @@ class ReviewScreen extends StatelessWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: SkwBtn(
-                      label: 'Lancer le QCM',
-                      icon: LucideIcons.arrowRight,
-                      onTap: () {
-                        context.read<AppState>().startSession();
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) => const QcmScreen()),
+                      label: 'Valider et Enregistrer',
+                      icon: LucideIcons.checkCircle,
+                      onTap: () async {
+                        final state = context.read<AppState>();
+                        String? courseId = state.currentCourseId;
+                        if (courseId == null) {
+                          final courseTitle = state.courseTitle.isNotEmpty
+                              ? state.courseTitle
+                              : 'QSM généré';
+                          final courseDescription = state.courseSummary.isNotEmpty
+                              ? state.courseSummary
+                              : 'QSM généré à partir d\'un document importé.';
+
+                          // Create the course only when the teacher validates and saves
+                          courseId = await state.createTeacherCourse({
+                            'title': courseTitle,
+                            'description': courseDescription,
+                            'subject': 'Général',
+                            'file_name': '${courseTitle.replaceAll(RegExp(r'\s+'), '_').toLowerCase()}.pdf',
+                          });
+
+                          if (courseId == null) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Erreur lors de la création du cours.')), 
+                              );
+                            }
+                            return;
+                          }
+
+                          state.setQuestions(
+                            state.questions,
+                            title: state.courseTitle,
+                            summary: state.courseSummary,
+                            keywords: state.keywords,
+                            courseId: courseId,
+                          );
+                        }
+
+                        // Afficher un indicateur de chargement
+                        showDialog(
+                          context: context,
+                          barrierDismissible: false,
+                          builder: (_) => const Center(child: CircularProgressIndicator()),
                         );
+
+                        try {
+                          await WebhookService().saveQuestions(
+                            courseId: courseId,
+                            questions: state.questions,
+                          );
+                          
+                          if (context.mounted) {
+                            // Fermer le loader
+                            Navigator.pop(context);
+                            
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('✅ QSM enregistré avec succès !'),
+                                backgroundColor: AppColors.success,
+                              ),
+                            );
+
+                            // Recharger les cours pour mettre à jour question_count
+                            await state.loadTeacherCourses();
+
+                            // Retourner au dashboard
+                            Navigator.of(context).popUntil((route) => route.isFirst);
+                          }
+                        } catch (e) {
+                          if (context.mounted) {
+                            Navigator.pop(context);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('❌ Erreur lors de l\'enregistrement: $e')),
+                            );
+                          }
+                        }
                       },
                     ),
                   ),

@@ -37,6 +37,53 @@ class _AdminStudentsListScreenState extends State<AdminStudentsListScreen> {
   }
 
   Future<void> _addStudent() async {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Ajouter un étudiant',
+              style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 24),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                child: const Icon(LucideIcons.userPlus, color: AppColors.primary),
+              ),
+              title: const Text('Créer un nouvel étudiant'),
+              subtitle: const Text('Remplir un formulaire d\'inscription'),
+              onTap: () {
+                Navigator.pop(context);
+                _createNewStudent();
+              },
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: AppColors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                child: const Icon(LucideIcons.search, color: AppColors.green),
+              ),
+              title: const Text('Sélectionner un étudiant existant'),
+              subtitle: const Text('Chercher dans la base de données'),
+              onTap: () {
+                Navigator.pop(context);
+                _showExistingStudentSelector();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _createNewStudent() async {
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -49,6 +96,51 @@ class _AdminStudentsListScreenState extends State<AdminStudentsListScreen> {
     if (mounted) {
       _loadStudents();
     }
+  }
+
+  Future<void> _showExistingStudentSelector() async {
+    _showStudentSearchDialog();
+  }
+
+  Future<void> _showStudentSearchDialog() async {
+    final allUsers = await context.read<AppState>().authService.fetchAllUsers(roleFilter: 'student');
+    if (!mounted) return;
+
+    // Filtrer ceux qui sont déjà dans cette classe
+    final existingStudentIds = context.read<AppState>().adminUsers
+        .where((u) => u['role'] == 'student' && u['classe_id']?.toString() == widget.classeId)
+        .map((u) => u['id'].toString())
+        .toSet();
+
+    final availableStudents = allUsers.where((u) => !existingStudentIds.contains(u['id'].toString())).toList();
+
+    showDialog(
+      context: context,
+      builder: (context) => _StudentSearchDialog(
+        students: availableStudents,
+        onSelected: (student) async {
+          Navigator.pop(context);
+          try {
+            await context.read<AppState>().assignEtudiantToClasse(
+              studentId: student['id'],
+              classeId: widget.classeId,
+            );
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Étudiant ajouté avec succès'), backgroundColor: AppColors.success),
+              );
+              _loadStudents();
+            }
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Erreur: $e'), backgroundColor: AppColors.error),
+              );
+            }
+          }
+        },
+      ),
+    );
   }
 
   Future<void> _exportToPDF() async {
@@ -329,6 +421,105 @@ class _StudentCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _StudentSearchDialog extends StatefulWidget {
+  final List<Map<String, dynamic>> students;
+  final Function(Map<String, dynamic>) onSelected;
+
+  const _StudentSearchDialog({required this.students, required this.onSelected});
+
+  @override
+  State<_StudentSearchDialog> createState() => _StudentSearchDialogState();
+}
+
+class _StudentSearchDialogState extends State<_StudentSearchDialog> {
+  String _searchQuery = '';
+  late List<Map<String, dynamic>> _filteredStudents;
+
+  @override
+  void initState() {
+    super.initState();
+    _filteredStudents = widget.students;
+  }
+
+  void _filterStudents(String query) {
+    setState(() {
+      _searchQuery = query.toLowerCase();
+      _filteredStudents = widget.students.where((s) {
+        final prenom = s['first_name']?.toString().toLowerCase() ?? '';
+        final nom = s['last_name']?.toString().toLowerCase() ?? '';
+        final email = s['email']?.toString().toLowerCase() ?? '';
+        final codeMassar = s['code_massar']?.toString().toLowerCase() ?? '';
+        return prenom.contains(_searchQuery) ||
+            nom.contains(_searchQuery) ||
+            email.contains(_searchQuery) ||
+            codeMassar.contains(_searchQuery);
+      }).toList();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(
+        'Sélectionner un étudiant',
+        style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              onChanged: _filterStudents,
+              decoration: InputDecoration(
+                hintText: 'Rechercher (Nom, Email, Massar...)',
+                prefixIcon: const Icon(LucideIcons.search, size: 20),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 300,
+              child: _filteredStudents.isEmpty
+                  ? Center(
+                      child: Text('Aucun étudiant trouvé', style: GoogleFonts.inter(color: AppColors.textSub)),
+                    )
+                  : ListView.builder(
+                      itemCount: _filteredStudents.length,
+                      itemBuilder: (context, index) {
+                        final s = _filteredStudents[index];
+                        final prenom = s['first_name'] ?? '';
+                        final nom = s['last_name'] ?? '';
+                        final email = s['email'] ?? '';
+                        
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: CircleAvatar(
+                            backgroundColor: AppColors.primary.withOpacity(0.1),
+                            child: const Icon(LucideIcons.user, color: AppColors.primary, size: 20),
+                          ),
+                          title: Text('$prenom $nom', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                          subtitle: Text(email, style: GoogleFonts.inter(fontSize: 12)),
+                          onTap: () => widget.onSelected(s),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Annuler', style: GoogleFonts.inter(color: AppColors.textSub)),
+        ),
+      ],
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
     );
   }
 }

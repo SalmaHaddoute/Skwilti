@@ -46,81 +46,122 @@ class WebhookService {
     String difficulte = 'moyen',
     String langue = 'Français',
     File? existingFile,
+    String? existingCourseId,
   }) async {
     try {
       final supabase = Supabase.instance.client;
       debugPrint('🔵 WebhookService: Démarrage pour "$title"');
       
-      File? file = existingFile;
-      String? fileName;
+      String courseId;
+      String? documentId;
+      String? fileUrl;
 
-      if (file == null) {
-        debugPrint('🔵 WebhookService: Sélection d\'un fichier...');
-        final result = await FilePicker.platform.pickFiles(
-          type: FileType.custom,
-          allowedExtensions: ['pdf'],
-        );
-        if (result == null) {
-          debugPrint('🟡 WebhookService: Aucun fichier sélectionné');
-          return null;
+      if (existingCourseId != null && existingCourseId.isNotEmpty && existingFile == null) {
+        // Reuse existing course, no file upload needed
+        courseId = existingCourseId;
+        debugPrint('🔵 WebhookService: Utilisation du cours existant $courseId sans nouvel upload');
+        
+        final existingDoc = await supabase
+           .from('documents')
+           .select('id, file_url')
+           .eq('course_id', courseId)
+           .order('created_at', ascending: false)
+           .limit(1)
+           .maybeSingle();
+
+        if (existingDoc == null) {
+          throw Exception('Ce cours a été créé sans fichier PDF réel sur le serveur (simulation). Veuillez ré-uploader ce cours avec la nouvelle version de l\'application.');
         }
-        file = File(result.files.single.path!);
-        fileName = result.files.single.name;
+
+        documentId = existingDoc['id']?.toString();
+        fileUrl = existingDoc['file_url']?.toString();
+        
+        debugPrint('🟢 WebhookService: Document existant trouvé. URL: $fileUrl');
       } else {
-        fileName = file.path.split(Platform.pathSeparator).last;
-        debugPrint('🔵 WebhookService: Utilisation du fichier existant: $fileName');
+        // Original logic for new upload
+        File? file = existingFile;
+        String? fileName;
+
+        if (file == null) {
+          debugPrint('🔵 WebhookService: Sélection d\'un fichier...');
+          final result = await FilePicker.platform.pickFiles(
+            type: FileType.custom,
+            allowedExtensions: ['pdf'],
+          );
+          if (result == null) {
+            debugPrint('🟡 WebhookService: Aucun fichier sélectionné');
+            return null;
+          }
+          file = File(result.files.single.path!);
+          fileName = result.files.single.name;
+        } else {
+          fileName = file.path.split(Platform.pathSeparator).last;
+          debugPrint('🔵 WebhookService: Utilisation du fichier existant: $fileName');
+        }
+
+        if (existingCourseId != null && existingCourseId.isNotEmpty) {
+          courseId = existingCourseId;
+          debugPrint('🔵 WebhookService: Utilisation du cours existant $courseId');
+          await supabase
+            .from('courses')
+            .update({'file_name': fileName ?? 'Document_QCM.pdf'})
+            .eq('id', courseId);
+        } else {
+          // 1. Create course in Supabase
+          debugPrint('🔵 WebhookService: Création de l\'entrée dans "courses" (teacherId: $teacherId)...');
+          final coursResponse = await supabase
+            .from('courses')
+            .insert({
+              'title': title,
+              'description': 'QCM généré avec $nombreQuestions questions ($difficulte)',
+              'teacher_id': teacherId,
+              'file_name': fileName ?? 'Document_QCM.pdf',
+              'subject': 'Général',
+              'filiere_id': filiereId,
+              'niveau_id': niveauId,
+              'matiere_id': matiereId,
+              'semestre': 1,
+              'created_at': DateTime.now().toIso8601String(),
+            })
+            .select()
+            .single();
+
+          courseId = coursResponse['id'];
+          debugPrint('🟢 WebhookService: Cours créé avec ID: $courseId');
+        }
+
+        // 2. Upload to Storage
+        debugPrint('🔵 WebhookService: Upload vers Storage (bucket "courses")...');
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        final storagePath = 'uploads/${timestamp}_$fileName';
+        
+        await supabase.storage
+          .from('courses')
+          .upload(storagePath, file);
+
+        fileUrl = supabase.storage
+          .from('courses')
+          .getPublicUrl(storagePath);
+        
+        debugPrint('🟢 WebhookService: Fichier uploadé. URL: $fileUrl');
+
+        // 3. Create document entry
+        debugPrint('🔵 WebhookService: Création de l\'entrée dans "documents"...');
+        final docResponse = await supabase
+          .from('documents')
+          .insert({
+            'user_id': teacherId,
+            'file_url': fileUrl,
+            'course_id': courseId,
+            'status': 'pending',
+            'created_at': DateTime.now().toIso8601String(),
+          })
+          .select()
+          .single();
+
+        documentId = docResponse['id'];
+        debugPrint('🟢 WebhookService: Document créé avec ID: $documentId');
       }
-
-      // 1. Create course in Supabase
-      debugPrint('🔵 WebhookService: Création de l\'entrée dans "courses" (teacherId: $teacherId)...');
-      final coursResponse = await supabase
-        .from('courses')
-        .insert({
-          'title': title,
-          'teacher_id': teacherId,
-          'filiere_id': filiereId,
-          'niveau_id': niveauId,
-          'matiere_id': matiereId,
-          'semestre': 1,
-          'created_at': DateTime.now().toIso8601String(),
-        })
-        .select()
-        .single();
-
-      final courseId = coursResponse['id'];
-      debugPrint('🟢 WebhookService: Cours créé avec ID: $courseId');
-
-      // 2. Upload to Storage
-      debugPrint('🔵 WebhookService: Upload vers Storage (bucket "courses")...');
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final storagePath = 'uploads/${timestamp}_$fileName';
-      
-      await supabase.storage
-        .from('courses')
-        .upload(storagePath, file);
-
-      final fileUrl = supabase.storage
-        .from('courses')
-        .getPublicUrl(storagePath);
-      
-      debugPrint('🟢 WebhookService: Fichier uploadé. URL: $fileUrl');
-
-      // 3. Create document entry
-      debugPrint('🔵 WebhookService: Création de l\'entrée dans "documents"...');
-      final docResponse = await supabase
-        .from('documents')
-        .insert({
-          'user_id': teacherId,
-          'file_url': fileUrl,
-          'course_id': courseId,
-          'status': 'pending',
-          'created_at': DateTime.now().toIso8601String(),
-        })
-        .select()
-        .single();
-
-      final documentId = docResponse['id'];
-      debugPrint('🟢 WebhookService: Document créé avec ID: $documentId');
 
       // 4. Call n8n Webhook
       final webhookUrl = await getWebhookUrl();
@@ -142,8 +183,15 @@ class WebhookService {
 
         debugPrint('🟢 WebhookService: Réponse n8n reçue (Status: ${response.statusCode})');
 
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
+        if (response.statusCode == 200 || response.statusCode == 201 || response.statusCode == 204) {
+          dynamic data = {};
+          if (response.body.isNotEmpty) {
+            try {
+              data = jsonDecode(response.body);
+            } catch (e) {
+              debugPrint('⚠️ WebhookService: Le corps de la réponse n\'est pas un JSON valide: ${response.body}');
+            }
+          }
           return {
             'course_id': courseId,
             'document_id': documentId,
@@ -151,7 +199,7 @@ class WebhookService {
             'response': data,
           };
         } else {
-          debugPrint('🔴 WebhookService: Erreur n8n (${response.statusCode}): ${response.body}');
+          debugPrint('� WebhookService: Erreur n8n (${response.statusCode}): ${response.body}');
           return {
             'course_id': courseId,
             'document_id': documentId,
@@ -194,6 +242,7 @@ class WebhookService {
         'points': 10, // Default
       }).toList().cast<Map<String, dynamic>>();
 
+      await supabase.from('questions').delete().eq('course_id', courseId);
       await supabase.from('questions').insert(questionsData);
 
       // Update question count in courses table
@@ -212,5 +261,23 @@ class WebhookService {
         .from('documents')
         .stream(primaryKey: ['id'])
         .eq('id', documentId);
+  }
+
+  Future<List<Question>> fetchQuestionsForCourse(String courseId) async {
+    try {
+      debugPrint('🔵 WebhookService: Récupération des questions pour le cours $courseId...');
+      final response = await Supabase.instance.client
+          .from('questions')
+          .select()
+          .eq('course_id', courseId);
+      
+      final List<dynamic> data = response as List<dynamic>;
+      debugPrint('🟢 WebhookService: ${data.length} questions trouvées.');
+      
+      return data.map((q) => Question.fromJson(q as Map<String, dynamic>)).toList();
+    } catch (e) {
+      debugPrint('🔴 WebhookService Erreur lors de la récupération des questions: $e');
+      return [];
+    }
   }
 }
