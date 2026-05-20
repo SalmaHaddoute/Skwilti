@@ -1,0 +1,473 @@
+class _HomeTab extends StatefulWidget {
+  final User? user;
+  const _HomeTab({this.user});
+
+  @override
+  State<_HomeTab> createState() => _HomeTabState();
+}
+
+class _HomeTabState extends State<_HomeTab> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => context.read<AppState>().loadChildData());
+  }
+
+  static Color _scoreColor(int pct) {
+    if (pct >= 80) return AppColors.success;
+    if (pct >= 60) return const Color(0xFFFF8C00);
+    return AppColors.error;
+  }
+
+  static String _scoreLabel(int pct) {
+    if (pct >= 80) return 'Excellent';
+    if (pct >= 60) return 'Bien';
+    if (pct >= 40) return 'Passable';
+    return 'À améliorer';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appState = context.watch<AppState>();
+    final sessions = appState.childSessions;
+    final loaded   = appState.childDataLoaded;
+    final child    = appState.childProfile;
+    final teachers = appState.childTeachers;
+
+    final childName = child != null
+        ? '${child['first_name'] ?? ''} ${child['last_name'] ?? ''}'.trim()
+        : null;
+
+    final validSessions = sessions
+        .where((s) => s['total_questions'] != null && (s['total_questions'] as int) > 0)
+        .toList();
+
+    final percentages = validSessions.map<int>((s) {
+      final total = s['total_questions'] as int;
+      final score = s['score'] as int? ?? 0;
+      return (score * 100 ~/ total);
+    }).toList();
+
+    final avg = percentages.isNotEmpty ? percentages.reduce((a, b) => a + b) ~/ percentages.length : 0;
+    final best = percentages.isNotEmpty ? percentages.reduce((a, b) => a > b ? a : b) : 0;
+
+    final now = DateTime.now();
+    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+    final sessionsThisWeek = validSessions.where((s) {
+      final dt = s['completed_at'] != null ? DateTime.tryParse(s['completed_at']) : null;
+      return dt != null && dt.isAfter(startOfWeek);
+    }).length;
+
+    final dayLabels = ['Lu', 'Ma', 'Me', 'Je', 'Ve', 'Sa', 'Di'];
+    final Map<int, List<int>> byDay = {};
+    for (final s in validSessions) {
+      final dt = DateTime.tryParse(s['completed_at'] ?? '');
+      if (dt != null) {
+        final diff = now.difference(dt).inDays;
+        if (diff >= 0 && diff < 7) {
+          final idx   = 6 - diff;
+          final total = s['total_questions'] as int;
+          final score = s['score'] as int? ?? 0;
+          byDay[idx]  = [...(byDay[idx] ?? []), (score * 100 ~/ total)];
+        }
+      }
+    }
+    final weekScores = List.generate(7, (i) {
+      final day = byDay[i] ?? [];
+      return day.isNotEmpty ? day.reduce((a, b) => a + b) ~/ day.length : 0;
+    });
+
+    final Map<String, List<int>> bySubject = {};
+    for (final s in validSessions) {
+      final title = (s['courses'] as Map?)?['title'] as String? ?? 'Autre';
+      final total = s['total_questions'] as int;
+      final score = s['score'] as int? ?? 0;
+      bySubject[title] = [...(bySubject[title] ?? []), (score * 100 ~/ total)];
+    }
+    final subjectAvgs = bySubject.entries.map((e) {
+      final a = e.value.reduce((x, y) => x + y) ~/ e.value.length;
+      return {'title': e.key, 'avg': a, 'count': e.value.length};
+    }).toList()
+      ..sort((a, b) => (b['avg'] as int).compareTo(a['avg'] as int));
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16).copyWith(bottom: 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Parent Greeting Header ──────────────────────────────
+          Container(
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [AppColors.primary, Color(0xFFBF4E07)],
+                begin: Alignment.topLeft, end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              children: [
+                Expanded(child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Bonjour ${widget.user?.firstName ?? ''} ',
+                        style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
+                    const SizedBox(height: 4),
+                    Text(childName != null ? 'Suivi de $childName' : 'Aucun enfant lié',
+                        style: GoogleFonts.inter(fontSize: 13, color: Colors.white.withOpacity(0.85))),
+                    const SizedBox(height: 16),
+                    _ParentRoleChip(),
+                  ],
+                )),
+                Container(
+                  width: 80, height: 80,
+                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(16)),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Image.asset('assets/images/parent-illustration.webp',
+                      width: 80, height: 80, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const Icon(LucideIcons.users, color: Colors.white, size: 40)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Loading / No child ────────────────────────────────────────
+          if (!loaded)
+            const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
+          else if (child == null)
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.border, width: 0.5)),
+              child: Column(children: [
+                Icon(LucideIcons.userX, size: 40, color: AppColors.textSub),
+                const SizedBox(height: 12),
+                Text('Aucun enfant lié à ce compte',
+                    style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text)),
+                const SizedBox(height: 4),
+                Text('Contactez l\'administration pour lier le compte de votre enfant.',
+                    style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSub), textAlign: TextAlign.center),
+              ]),
+            )
+          else ...[
+            // ── 4 KPI cards ──────────────────────────────────────
+            Row(children: [
+              Expanded(
+                  child: _KpiCard(
+                      icon: LucideIcons.trendingUp,
+                      label: 'Moyenne',
+                      value: avg > 0 ? '$avg%' : '--',
+                      color: _scoreColor(avg),
+                      sub: _scoreLabel(avg))),
+              const SizedBox(width: 12),
+              Expanded(
+                  child: _KpiCard(
+                      icon: LucideIcons.checkCircle2,
+                      label: 'QSM faits',
+                      value: '${sessions.length}',
+                      color: const Color(0xFF1976D2),
+                      sub: 'Total complétés')),
+            ]),
+            const SizedBox(height: 12),
+            Row(children: [
+              Expanded(
+                  child: _KpiCard(
+                      icon: LucideIcons.star,
+                      label: 'Meilleur score',
+                      value: sessions.isEmpty ? '--' : '$best%',
+                      color: const Color(0xFFFF8C00),
+                      sub: 'Record personnel')),
+              const SizedBox(width: 12),
+              Expanded(
+                  child: _KpiCard(
+                      icon: LucideIcons.calendarCheck,
+                      label: 'Cette semaine',
+                      value: '$sessionsThisWeek',
+                      color: const Color(0xFF7B1FA2),
+                      sub: 'Sessions')),
+            ]),
+            const SizedBox(height: 24),
+
+            // ── Weekly bar chart ─────────────────────────────────
+            _SectionLabel('Activité de la semaine'),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.border),
+                boxShadow: [
+                  BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 4))
+                ],
+              ),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Score moyen par jour',
+                        style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text)),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      height: 120,
+                      child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            for (int i = 0; i < weekScores.length; i++) ...[
+                              if (i > 0) const SizedBox(width: 8),
+                              Expanded(
+                                  child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.end,
+                                      children: [
+                                    if (weekScores[i] > 0)
+                                      Text('${weekScores[i]}',
+                                          style: GoogleFonts.nunito(
+                                              fontSize: 9, fontWeight: FontWeight.w800, color: _scoreColor(weekScores[i]))),
+                                    const SizedBox(height: 2),
+                                    AnimatedContainer(
+                                      duration: const Duration(milliseconds: 500),
+                                      height: weekScores[i] > 0 ? (80 * weekScores[i] / 100).clamp(2.0, 80.0) : 3.0,
+                                      decoration: BoxDecoration(
+                                        color: weekScores[i] > 0 ? _scoreColor(weekScores[i]) : AppColors.border,
+                                        borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(dayLabels[i],
+                                        style: GoogleFonts.inter(
+                                            fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.textSub)),
+                                  ])),
+                            ],
+                          ]),
+                    ),
+                  ]),
+            ),
+            const SizedBox(height: 24),
+
+            // ── Per-subject breakdown ────────────────────────────
+            if (subjectAvgs.isNotEmpty) ...[
+              _SectionLabel('Performance par matière'),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.border),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 4))
+                  ],
+                ),
+                child: Column(
+                  children: subjectAvgs.take(6).map((sub) {
+                    final t   = sub['title'] as String;
+                    final a   = sub['avg'] as int;
+                    final cnt = sub['count'] as int;
+                    final col = _scoreColor(a);
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(children: [
+                              Expanded(
+                                  child: Text(t,
+                                      style: GoogleFonts.inter(
+                                          fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text),
+                                      overflow: TextOverflow.ellipsis)),
+                              const SizedBox(width: 8),
+                              Text('$cnt QSM',
+                                  style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSub)),
+                              const SizedBox(width: 8),
+                              Text('$a%',
+                                  style: GoogleFonts.inter(
+                                      fontSize: 14, fontWeight: FontWeight.w800, color: col)),
+                            ]),
+                            const SizedBox(height: 6),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: LinearProgressIndicator(
+                                value: a / 100,
+                                minHeight: 7,
+                                backgroundColor: col.withOpacity(0.12),
+                                valueColor: AlwaysStoppedAnimation(col),
+                              ),
+                            ),
+                          ]),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
+
+            // ── Full sessions history ────────────────────────────
+            Row(children: [
+              _SectionLabel('Historique complet'),
+              const Spacer(),
+              Text('${sessions.length} sessions',
+                  style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSub)),
+            ]),
+            const SizedBox(height: 12),
+
+            if (sessions.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(28),
+                decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.border)),
+                child: Column(children: [
+                  Icon(LucideIcons.clipboardList, size: 40, color: AppColors.textSub.withOpacity(0.4)),
+                  const SizedBox(height: 12),
+                  Text('Aucune session pour l\'instant',
+                      style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text)),
+                  const SizedBox(height: 4),
+                  Text('Les QSM complétés apparaîtront ici.',
+                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSub),
+                      textAlign: TextAlign.center),
+                ]),
+              )
+            else
+              ...sessions.map((s) {
+                final total   = s['total_questions'] as int? ?? 0;
+                final score   = s['score'] as int? ?? 0;
+                final pct     = total > 0 ? (score * 100 ~/ total) : 0;
+                final title   = (s['courses'] as Map?)?['title'] as String? ?? 'QSM';
+                final dt      = s['completed_at'] != null ? DateTime.tryParse(s['completed_at']) : null;
+                final dateStr = dt != null
+                    ? '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}'
+                    : '';
+                final color   = _scoreColor(pct);
+                
+                final profMap = (s['classrooms'] as Map?)?['profiles'] as Map?;
+                final teacherName = profMap != null ? '${profMap['first_name'] ?? ''} ${profMap['last_name'] ?? ''}'.trim() : '';
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: color.withOpacity(0.25)),
+                    boxShadow: [
+                      BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 3))
+                    ],
+                  ),
+                  child: Row(children: [
+                    Container(
+                      width: 44, height: 44,
+                      decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
+                      child: Icon(LucideIcons.fileText, size: 20, color: color),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                          Text(title,
+                              style: GoogleFonts.inter(
+                                  fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text),
+                              overflow: TextOverflow.ellipsis),
+                          if (teacherName.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text('Avec $teacherName', style: GoogleFonts.inter(fontSize: 11, color: AppColors.primary)),
+                          ],
+                          const SizedBox(height: 3),
+                          Row(children: [
+                            Icon(LucideIcons.calendar, size: 11, color: AppColors.textSub),
+                            const SizedBox(width: 4),
+                            Text(dateStr, style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSub)),
+                            const SizedBox(width: 10),
+                            Icon(LucideIcons.helpCircle, size: 11, color: AppColors.textSub),
+                            const SizedBox(width: 4),
+                            Text('$total questions', style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSub)),
+                          ]),
+                        ])),
+                    Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text('$pct%',
+                              style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: color)),
+                          Text(_scoreLabel(pct),
+                              style: GoogleFonts.inter(fontSize: 10, color: color, fontWeight: FontWeight.w600)),
+                        ]),
+                  ]),
+                );
+              }),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ParentRoleChip extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white.withOpacity(0.3), width: 0.5),
+      ),
+      child: Text(
+        'Parent',
+        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white),
+      ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  final String label;
+  const _SectionLabel(this.label);
+  @override
+  Widget build(BuildContext context) {
+    return Text(label, style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text));
+  }
+}
+
+class _KpiCard extends StatelessWidget {
+  final IconData icon;
+  final String label, value, sub;
+  final Color color;
+  const _KpiCard({
+    required this.icon, required this.label, required this.value, required this.color, required this.sub,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.2)),
+        boxShadow: [
+          BoxShadow(color: color.withOpacity(0.08), blurRadius: 12, offset: const Offset(0, 4))
+        ],
+      ),
+      child: Row(children: [
+        Container(
+          width: 44, height: 44,
+          decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
+          child: Icon(icon, color: color, size: 22),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+              Text(value, style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w900, color: color)),
+              Text(label, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.text)),
+              Text(sub, style: GoogleFonts.inter(fontSize: 10, color: AppColors.textSub)),
+            ])),
+      ]),
+    );
+  }
+}

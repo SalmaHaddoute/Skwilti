@@ -15,6 +15,7 @@ import 'create_room_screen.dart';
 import 'upload_screen.dart';
 import 'lesson_upload_screen.dart';
 import 'profile_screen.dart';
+import 'teacher_messaging_screen.dart';
 import '../models/room.dart';
 import '../models/classroom.dart';
 
@@ -102,6 +103,24 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
         showNotifications: true,
         profileIllustration: 'assets/images/teacher-illustration.webp',
         onProfileTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileScreen())),
+        extraActions: [
+          GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const TeacherMessagingScreen()),
+            ),
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.border, width: 0.5),
+              ),
+              child: const Icon(LucideIcons.messageSquare, size: 16, color: AppColors.text),
+            ),
+          ),
+        ],
       ),
       body: IndexedStack(
         index: _currentIndex,
@@ -301,34 +320,72 @@ class _HomeTabState extends State<_HomeTab> {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.05),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.primary.withOpacity(0.2), width: 1),
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFFFDFB), Color(0xFFFFF5EE)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFFFD4BE), width: 1.2),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFFD7E14).withOpacity(0.06),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
               ),
               child: Row(
                 children: [
                   Container(
-                    width: 40, height: 40,
-                    decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(8)),
-                    child: const Icon(LucideIcons.fileText, color: Colors.white, size: 20),
+                    width: 44, height: 44,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFFD7E14), Color(0xFFE8590C)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFFD7E14).withOpacity(0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(LucideIcons.fileText, color: Colors.white, size: 22),
                   ),
                   const SizedBox(width: 16),
                   Expanded(child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(courses.first['title'] as String? ?? 'Cours sans titre',
-                          style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text),
+                          style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text),
                           maxLines: 1, overflow: TextOverflow.ellipsis),
-                      const SizedBox(height: 4),
-                      Text(courses.first['subject'] as String? ?? '',
-                          style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSub)),
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF0E6),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          (courses.first['subject'] as String? ?? 'SVT').toUpperCase(),
+                          style: GoogleFonts.inter(fontSize: 10, color: const Color(0xFFFD7E14), fontWeight: FontWeight.w700),
+                        ),
+                      ),
                     ],
                   )),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(color: AppColors.success, borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE6FCF5),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFF96F2D7), width: 1),
+                    ),
                     child: Text('${courses.first['question_count'] ?? 0} questions',
-                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
+                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: const Color(0xFF0CA678))),
                   ),
                 ],
               ),
@@ -343,46 +400,91 @@ class _HomeTabState extends State<_HomeTab> {
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: AppColors.border, width: 0.5),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.03),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                )
+              ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Activité cette semaine',
-                    style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text)),
-                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Activité cette semaine',
+                        style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text)),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryLight,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'Derniers 7 jours',
+                        style: GoogleFonts.nunito(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.primary),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
                 SizedBox(
-                  height: 150,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+                  height: 160,
+                  child: Stack(
                     children: [
-                      for (int i = 0; i < 7; i++) ...[
-                        if (i > 0) const SizedBox(width: 8),
-                        Expanded(child: Builder(builder: (_) {
-                          final val = activity[i] ?? 0;
-                          final maxVal = activity.values.fold(1, (a, b) => a > b ? a : b);
-                          return Column(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              Text('$val', style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w900, color: AppColors.primary)),
-                              const SizedBox(height: 4),
-                              Container(
-                                height: maxVal > 0 ? 80 * (val / maxVal) : 4,
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    colors: [AppColors.primary, AppColors.primary2],
-                                    begin: Alignment.bottomCenter, end: Alignment.topCenter,
-                                  ),
-                                  borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(['L','M','M','J','V','S','D'][i],
-                                  style: GoogleFonts.nunito(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.textSub)),
+                      // Subtly simulated grid lines for high-fidelity feel
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: List.generate(4, (index) => Container(
+                          height: 1,
+                          color: AppColors.border.withOpacity(0.4),
+                        )),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            for (int i = 0; i < 7; i++) ...[
+                              if (i > 0) const SizedBox(width: 8),
+                              Expanded(child: Builder(builder: (_) {
+                                final val = activity[i] ?? 0;
+                                final maxVal = activity.values.fold(1, (a, b) => a > b ? a : b);
+                                return Column(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    Text('$val', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w900, color: AppColors.primary)),
+                                    const SizedBox(height: 6),
+                                    AnimatedContainer(
+                                      duration: const Duration(milliseconds: 500),
+                                      height: maxVal > 0 ? 90 * (val / maxVal) : 4,
+                                      decoration: BoxDecoration(
+                                        gradient: const LinearGradient(
+                                          colors: [AppColors.primary, AppColors.primary2],
+                                          begin: Alignment.bottomCenter, end: Alignment.topCenter,
+                                        ),
+                                        borderRadius: BorderRadius.circular(6),
+                                        boxShadow: val > 0 ? [
+                                          BoxShadow(
+                                            color: AppColors.primary.withOpacity(0.2),
+                                            blurRadius: 6,
+                                            offset: const Offset(0, 2),
+                                          )
+                                        ] : null,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'][i],
+                                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
+                                  ],
+                                );
+                              })),
                             ],
-                          );
-                        })),
-                      ],
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -394,17 +496,19 @@ class _HomeTabState extends State<_HomeTab> {
           SectionTitle(title: 'Actions rapides', action: null),
           const SizedBox(height: 10),
           GridView.count(
-            crossAxisCount: 2,
+            crossAxisCount: 3,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-            childAspectRatio: 1.8,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            childAspectRatio: 0.95,
             children: [
               _QuickAction(icon: LucideIcons.fileText, label: 'Créer QSM', sub: 'Questions/Réponses', color: AppColors.primary,
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const UploadScreen()))),
               _QuickAction(icon: LucideIcons.upload, label: 'Uploader cours', sub: 'PDF, DOCX', color: AppColors.warning,
                   onTap: () => widget.onNavigate(6)),
+              _QuickAction(icon: LucideIcons.messageSquare, label: 'Messagerie', sub: 'Parents & Élèves', color: AppColors.info,
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TeacherMessagingScreen()))),
             ],
           ),
           const SizedBox(height: 20),
@@ -721,29 +825,45 @@ class _QuickAction extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(color: AppColors.border, width: 0.5),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.02),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
-        child: Row(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 36, height: 36,
-              decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
+              width: 38, height: 38,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
               child: Icon(icon, size: 18, color: color),
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(label, style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w900, color: AppColors.text)),
-                  Text(sub, style: GoogleFonts.nunito(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.textSub)),
-                ],
-              ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.text),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              sub,
+              style: GoogleFonts.nunito(fontSize: 9, fontWeight: FontWeight.w600, color: AppColors.textSub),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
@@ -1807,7 +1927,7 @@ class _MyCoursesTabState extends State<_MyCoursesTab> {
     final allCourses = state.teacherCourses.map((course) => {
       ...course,
       'fileName': course['file_name'] ?? 'Inconnu',
-      'semester': 'Semestre Actuel',
+      'semester': 'Semestre 1',
       'uploadedAt': course['created_at'] ?? DateTime.now().toIso8601String(),
       'isDefault': false,
     }).toList();
@@ -1941,7 +2061,7 @@ class _MyCoursesTabState extends State<_MyCoursesTab> {
                     title: course['title'] as String? ?? 'Sans titre',
                     description: course['description'] as String? ?? '',
                     fileName: course['file_name'] as String? ?? course['fileName'] as String? ?? 'Inconnu',
-                    semester: course['semester'] as String? ?? 'Semestre Actuel',
+                    semester: course['semester'] as String? ?? 'Semestre 1',
                     uploadedAt: course['uploadedAt'] as String? ?? course['created_at'] as String? ?? DateTime.now().toIso8601String(),
                     isDefault: isDefault,
                     courseData: course,
@@ -2377,7 +2497,7 @@ class _LibraryTabState extends State<_LibraryTab> {
                       builder: (_) => LessonUploadScreen(
                         filiere: selectedFiliereName,
                         subject: selectedSubjectName,
-                        semester: 'Semestre Actuel',
+                        semester: 'Semestre 1',
                       ),
                     ),
                   );

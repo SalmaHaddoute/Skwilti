@@ -25,7 +25,7 @@ class WebhookTestService {
       final supabase = Supabase.instance.client;
       
       // 1. Choisir un PDF
-      final result = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf'],
       );

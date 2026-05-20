@@ -84,7 +84,7 @@ class WebhookService {
 
         if (file == null) {
           debugPrint('🔵 WebhookService: Sélection d\'un fichier...');
-          final result = await FilePicker.platform.pickFiles(
+          final result = await FilePicker.pickFiles(
             type: FileType.custom,
             allowedExtensions: ['pdf'],
           );

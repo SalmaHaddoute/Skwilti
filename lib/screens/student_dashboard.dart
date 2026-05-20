@@ -15,6 +15,7 @@ import 'profile_screen.dart';
 import 'qcm_screen.dart';
 import 'room_code_screen.dart';
 import 'join_class_screen.dart';
+import 'student_messaging_screen.dart';
 
 class StudentDashboard extends StatefulWidget {
   const StudentDashboard({super.key});
@@ -275,17 +276,19 @@ class _HomeTabState extends State<_HomeTab> {
           _SectionHeader('Actions rapides'),
           const SizedBox(height: 10),
           GridView.count(
-            crossAxisCount: 2,
+            crossAxisCount: 3,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-            childAspectRatio: 1.8,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            childAspectRatio: 0.95,
             children: [
               _SimpleQuickAction(icon: LucideIcons.fileText, label: 'Rejoindre classe', sub: 'Code d\'accès', color: AppColors.primary,
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const JoinClassScreen()))),
               _SimpleQuickAction(icon: LucideIcons.link, label: 'Code Room', sub: 'Entrer un code', color: AppColors.info,
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RoomCodeScreen()))),
+              _SimpleQuickAction(icon: LucideIcons.messageSquare, label: 'Messagerie', sub: 'Mes Enseignants', color: const Color(0xFF2EC4B6),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StudentMessagingScreen()))),
             ],
           ),
         ],

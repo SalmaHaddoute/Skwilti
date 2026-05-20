@@ -1,18 +1,22 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 
 class ConversationScreen extends StatefulWidget {
   final String teacherName;
   final String subject;
   final IconData teacherIcon;
+  final bool isSenderTeacher;
 
   const ConversationScreen({
     super.key,
     required this.teacherName,
     required this.subject,
     required this.teacherIcon,
+    this.isSenderTeacher = false,
   });
 
   @override
@@ -21,23 +25,77 @@ class ConversationScreen extends StatefulWidget {
 
 class _ConversationScreenState extends State<ConversationScreen> {
   final TextEditingController _messageController = TextEditingController();
-  final List<Message> _messages = [
-    Message(
-      text: 'Bonjour ! Je suis disponible pour répondre à vos questions.',
-      isTeacher: true,
-      time: '10:30',
-    ),
-    Message(
-      text: 'Merci ! J\'aimerais savoir comment se déroule le prochain contrôle.',
-      isTeacher: false,
-      time: '10:32',
-    ),
-    Message(
-      text: 'Le contrôle portera sur les chapitres 3 et 4, avec des QCM et des exercices pratiques.',
-      isTeacher: true,
-      time: '10:33',
-    ),
-  ];
+  final List<Message> _messages = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMessages();
+  }
+
+  Future<void> _loadMessages() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'chat_messages_${widget.teacherName}';
+      final savedData = prefs.getStringList(key);
+
+      if (savedData != null && savedData.isNotEmpty) {
+        final List<Message> loaded = savedData
+            .map((item) => Message.fromJson(jsonDecode(item) as Map<String, dynamic>))
+            .toList();
+        if (mounted) {
+          setState(() {
+            _messages.clear();
+            _messages.addAll(loaded);
+          });
+        }
+      } else {
+        final List<Message> initial = [
+          Message(
+            text: widget.isSenderTeacher
+                ? 'Bonjour, comment puis-je vous aider aujourd\'hui ?'
+                : 'Bonjour ! Je suis disponible pour répondre à vos questions.',
+            isTeacher: !widget.isSenderTeacher,
+            time: '10:30',
+          ),
+          Message(
+            text: widget.isSenderTeacher
+                ? 'J\'aimerais savoir comment se déroulent les devoirs de mon enfant.'
+                : 'Merci ! J\'aimerais savoir comment se déroule le prochain contrôle.',
+            isTeacher: widget.isSenderTeacher,
+            time: '10:32',
+          ),
+          Message(
+            text: widget.isSenderTeacher
+                ? 'Les devoirs sont disponibles dans l\'onglet Bibliothèque et à faire chaque semaine.'
+                : 'Le contrôle portera sur les chapitres 3 et 4, avec des QCM et des exercices pratiques.',
+            isTeacher: !widget.isSenderTeacher,
+            time: '10:33',
+          ),
+        ];
+        if (mounted) {
+          setState(() {
+            _messages.clear();
+            _messages.addAll(initial);
+          });
+        }
+        await _saveMessages();
+      }
+    } catch (e) {
+      print('⚠️ Error loading chat messages: $e');
+    }
+  }
+
+  Future<void> _saveMessages() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'chat_messages_${widget.teacherName}';
+      final data = _messages.map((m) => jsonEncode(m.toJson())).toList();
+      await prefs.setStringList(key, data);
+    } catch (e) {
+      print('⚠️ Error saving chat messages: $e');
+    }
+  }
 
   void _sendMessage() {
     if (_messageController.text.trim().isEmpty) return;
@@ -45,23 +103,25 @@ class _ConversationScreenState extends State<ConversationScreen> {
     setState(() {
       _messages.add(Message(
         text: _messageController.text,
-        isTeacher: false,
+        isTeacher: widget.isSenderTeacher,
         time: DateTime.now().toString().substring(11, 16),
       ));
     });
 
     _messageController.clear();
+    _saveMessages();
 
-    // Simuler une réponse de l'enseignant
+    // Simuler une réponse
     Future.delayed(const Duration(seconds: 1), () {
       if (mounted) {
         setState(() {
           _messages.add(Message(
             text: 'Merci pour votre message. Je vous répondrai dès que possible.',
-            isTeacher: true,
+            isTeacher: !widget.isSenderTeacher,
             time: DateTime.now().toString().substring(11, 16),
           ));
         });
+        _saveMessages();
       }
     });
   }
@@ -205,6 +265,18 @@ class Message {
     required this.isTeacher,
     required this.time,
   });
+
+  Map<String, dynamic> toJson() => {
+        'text': text,
+        'isTeacher': isTeacher,
+        'time': time,
+      };
+
+  factory Message.fromJson(Map<String, dynamic> json) => Message(
+        text: json['text'] as String,
+        isTeacher: json['isTeacher'] as bool,
+        time: json['time'] as String,
+      );
 }
 
 class MessageBubble extends StatelessWidget {
