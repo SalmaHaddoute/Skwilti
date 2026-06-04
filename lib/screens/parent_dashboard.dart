@@ -1,0 +1,1540 @@
+import 'package:flutter/material.dart';
+import 'package:lucide_icons/lucide_icons.dart';
+import 'package:provider/provider.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../theme/app_theme.dart';
+import '../services/app_state.dart';
+import '../models/user.dart';
+import 'messages_screen.dart';
+import '../widgets/skwilti_nav.dart';
+import '../widgets/dashboard_widgets.dart';
+import '../widgets/parent_subject_progress.dart';
+import '../widgets/recent_grade_card.dart';
+import '../widgets/parent_achievement_cards.dart';
+import '../widgets/astronaut_illustration.dart';
+import '../widgets/empty_state.dart';
+import 'profile_screen.dart';
+import 'course_detail_screen.dart';
+
+class ParentDashboard extends StatefulWidget {
+  const ParentDashboard({super.key});
+  @override
+  State<ParentDashboard> createState() => _ParentDashboardState();
+}
+
+class _ParentDashboardState extends State<ParentDashboard> {
+  int _idx = 0;
+  static const _nav = [
+    SkwNavItem(icon: LucideIcons.home, label: 'Accueil'),
+    SkwNavItem(icon: LucideIcons.userPlus, label: 'Lier'),
+    SkwNavItem(icon: LucideIcons.library, label: 'Bibliothèque'),
+    SkwNavItem(icon: LucideIcons.messageSquare, label: 'Contact'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final user = context.watch<AppState>().currentUser;
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: SkwiltiTopNav(
+        title: _idx == 0 ? 'Skwilti' : _idx == 1 ? 'Lier un enfant' : _idx == 2 ? 'Bibliothèque' : 'Contact',
+        showLogo: _idx == 0,
+        showNotifications: true,
+        onProfileTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileScreen())),
+      ),
+      body: IndexedStack(index: _idx, children: [
+        _HomeTab(user: user),
+        const _LinkChildTab(),
+        const _ParentLibraryTab(),
+        const _ContactTab(),
+      ]),
+      bottomNavigationBar: SkwiltiBottomNav(currentIndex: _idx, onTap: (i) => setState(() => _idx = i), items: _nav),
+    );
+  }
+}
+
+class _HomeTab extends StatefulWidget {
+  final User? user;
+  const _HomeTab({this.user});
+
+  @override
+  State<_HomeTab> createState() => _HomeTabState();
+}
+
+class _HomeTabState extends State<_HomeTab> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => context.read<AppState>().loadChildData());
+  }
+
+  static Color _scoreColor(int pct) {
+    if (pct >= 80) return AppColors.success;
+    if (pct >= 60) return const Color(0xFFFF8C00);
+    return AppColors.error;
+  }
+
+  static String _scoreLabel(int pct) {
+    if (pct >= 80) return 'Excellent';
+    if (pct >= 60) return 'Bien';
+    if (pct >= 40) return 'Passable';
+    return 'À améliorer';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appState = context.watch<AppState>();
+    final sessions = appState.childSessions;
+    final loaded   = appState.childDataLoaded;
+    final child    = appState.childProfile;
+    final teachers = appState.childTeachers;
+
+    final childName = child != null
+        ? '${child['first_name'] ?? ''} ${child['last_name'] ?? ''}'.trim()
+        : null;
+
+    final validSessions = sessions
+        .where((s) => s['total_questions'] != null && (s['total_questions'] as int) > 0)
+        .toList();
+
+    final percentages = validSessions.map<int>((s) {
+      final total = s['total_questions'] as int;
+      final score = s['score'] as int? ?? 0;
+      return (score * 100 ~/ total);
+    }).toList();
+
+    final avg = percentages.isNotEmpty ? percentages.reduce((a, b) => a + b) ~/ percentages.length : 0;
+    final best = percentages.isNotEmpty ? percentages.reduce((a, b) => a > b ? a : b) : 0;
+
+    final now = DateTime.now();
+    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+    final sessionsThisWeek = validSessions.where((s) {
+      final dt = s['completed_at'] != null ? DateTime.tryParse(s['completed_at']) : null;
+      return dt != null && dt.isAfter(startOfWeek);
+    }).length;
+
+    final dayLabels = ['Lu', 'Ma', 'Me', 'Je', 'Ve', 'Sa', 'Di'];
+    final Map<int, List<int>> byDay = {};
+    for (final s in validSessions) {
+      final dt = DateTime.tryParse(s['completed_at'] ?? '');
+      if (dt != null) {
+        final diff = now.difference(dt).inDays;
+        if (diff >= 0 && diff < 7) {
+          final idx   = 6 - diff;
+          final total = s['total_questions'] as int;
+          final score = s['score'] as int? ?? 0;
+          byDay[idx]  = [...(byDay[idx] ?? []), (score * 100 ~/ total)];
+        }
+      }
+    }
+    final weekScores = List.generate(7, (i) {
+      final day = byDay[i] ?? [];
+      return day.isNotEmpty ? day.reduce((a, b) => a + b) ~/ day.length : 0;
+    });
+
+    final Map<String, List<int>> bySubject = {};
+    for (final s in validSessions) {
+      final title = (s['courses'] as Map?)?['title'] as String? ?? 'Autre';
+      final total = s['total_questions'] as int;
+      final score = s['score'] as int? ?? 0;
+      bySubject[title] = [...(bySubject[title] ?? []), (score * 100 ~/ total)];
+    }
+    final subjectAvgs = bySubject.entries.map((e) {
+      final a = e.value.reduce((x, y) => x + y) ~/ e.value.length;
+      return {'title': e.key, 'avg': a, 'count': e.value.length};
+    }).toList()
+      ..sort((a, b) => (b['avg'] as int).compareTo(a['avg'] as int));
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16).copyWith(bottom: 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Parent Greeting Header with Astronaut ──────────────────────────────
+          Stack(
+            children: [
+              const AstronautBackground(
+                type: AstronautType.welcome,
+                alignment: Alignment.bottomRight,
+                opacity: 0.12,
+                scale: 0.6,
+              ),
+              Container(
+                padding: const EdgeInsets.all(28),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [AppColors.primary, Color(0xFFBF4E07)],
+                    begin: Alignment.topLeft, end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Bonjour ${widget.user?.firstName ?? ''} ',
+                            style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
+                        const SizedBox(height: 4),
+                        Text(childName != null ? 'Suivi de $childName' : 'Aucun enfant lié',
+                            style: GoogleFonts.inter(fontSize: 13, color: Colors.white.withOpacity(0.85))),
+                        const SizedBox(height: 16),
+                        _ParentRoleChip(),
+                      ]),
+                    ),
+                    Container(
+                      width: 80, height: 80,
+                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(16)),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: Image.asset(
+                          'assets/images/parent-illustration.webp',
+                          width: 80,
+                          height: 80,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Icon(LucideIcons.users, color: Colors.white, size: 40);
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // ── Loading / No child ────────────────────────────────────────
+          if (!loaded)
+            const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
+          else if (child == null)
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.border, width: 0.5)),
+              child: Column(children: [
+                AstronautIllustration(
+                  type: AstronautType.welcome,
+                  width: 80,
+                  height: 80,
+                  showAnimation: true,
+                  fallbackIcon: const Icon(LucideIcons.userX, color: AppColors.textSub, size: 40),
+                ),
+                const SizedBox(height: 16),
+                Text('Aucun enfant lié à ce compte',
+                    style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text)),
+                const SizedBox(height: 8),
+                Text('Contactez l\'administration pour lier le compte de votre enfant et commencer le suivi.',
+                    style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSub), textAlign: TextAlign.center),
+              ]),
+            )
+          else ...[
+            // ── 4 KPI cards ──────────────────────────────────────
+            Row(children: [
+              Expanded(
+                  child: _KpiCard(
+                      icon: LucideIcons.trendingUp,
+                      label: 'Moyenne',
+                      value: avg > 0 ? '$avg%' : '--',
+                      color: _scoreColor(avg),
+                      sub: _scoreLabel(avg))),
+              const SizedBox(width: 12),
+              Expanded(
+                  child: _KpiCard(
+                      icon: LucideIcons.checkCircle2,
+                      label: 'QSM faits',
+                      value: '${sessions.length}',
+                      color: const Color(0xFF1976D2),
+                      sub: 'Total complétés')),
+            ]),
+            const SizedBox(height: 12),
+            Row(children: [
+              Expanded(
+                  child: _KpiCard(
+                      icon: LucideIcons.star,
+                      label: 'Meilleur score',
+                      value: sessions.isEmpty ? '--' : '$best%',
+                      color: const Color(0xFFFF8C00),
+                      sub: 'Record personnel')),
+              const SizedBox(width: 12),
+              Expanded(
+                  child: _KpiCard(
+                      icon: LucideIcons.calendarCheck,
+                      label: 'Cette semaine',
+                      value: '$sessionsThisWeek',
+                      color: const Color(0xFF7B1FA2),
+                      sub: 'Sessions')),
+            ]),
+            const SizedBox(height: 24),
+
+            // ── Weekly bar chart ─────────────────────────────────
+            const _SectionLabel('Activité de la semaine'),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.border),
+                boxShadow: [
+                  BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 4))
+                ],
+              ),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Score moyen par jour',
+                        style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text)),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      height: 120,
+                      child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            for (int i = 0; i < weekScores.length; i++) ...[
+                              if (i > 0) const SizedBox(width: 8),
+                              Expanded(
+                                  child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.end,
+                                      children: [
+                                    if (weekScores[i] > 0)
+                                      Text('${weekScores[i]}',
+                                          style: GoogleFonts.nunito(
+                                              fontSize: 9, fontWeight: FontWeight.w800, color: _scoreColor(weekScores[i]))),
+                                    const SizedBox(height: 2),
+                                    AnimatedContainer(
+                                      duration: const Duration(milliseconds: 500),
+                                      height: weekScores[i] > 0 ? (80 * weekScores[i] / 100).clamp(2.0, 80.0) : 3.0,
+                                      decoration: BoxDecoration(
+                                        color: weekScores[i] > 0 ? _scoreColor(weekScores[i]) : AppColors.border,
+                                        borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(dayLabels[i],
+                                        style: GoogleFonts.inter(
+                                            fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.textSub)),
+                                  ])),
+                            ],
+                          ]),
+                    ),
+                  ]),
+            ),
+            const SizedBox(height: 24),
+
+            // ── Per-subject breakdown ────────────────────────────
+            if (subjectAvgs.isNotEmpty) ...[
+              const _SectionLabel('Performance par matière'),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.border),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 4))
+                  ],
+                ),
+                child: Column(
+                  children: subjectAvgs.take(6).map((sub) {
+                    final t   = sub['title'] as String;
+                    final a   = sub['avg'] as int;
+                    final cnt = sub['count'] as int;
+                    final col = _scoreColor(a);
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(children: [
+                              Expanded(
+                                  child: Text(t,
+                                      style: GoogleFonts.inter(
+                                          fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text),
+                                      overflow: TextOverflow.ellipsis)),
+                              const SizedBox(width: 8),
+                              Text('$cnt QSM',
+                                  style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSub)),
+                              const SizedBox(width: 8),
+                              Text('$a%',
+                                  style: GoogleFonts.inter(
+                                      fontSize: 14, fontWeight: FontWeight.w800, color: col)),
+                            ]),
+                            const SizedBox(height: 6),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: LinearProgressIndicator(
+                                value: a / 100,
+                                minHeight: 7,
+                                backgroundColor: col.withOpacity(0.12),
+                                valueColor: AlwaysStoppedAnimation(col),
+                              ),
+                            ),
+                          ]),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
+
+            // ── Full sessions history ────────────────────────────
+            Row(children: [
+              const _SectionLabel('Historique complet'),
+              const Spacer(),
+              Text('${sessions.length} sessions',
+                  style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSub)),
+            ]),
+            const SizedBox(height: 12),
+
+            if (sessions.isEmpty)
+              EmptyStateCard(
+                emptyState: EmptyState(
+                  title: 'Aucune session pour l\'instant',
+                  subtitle: 'Les QSM complétés par votre enfant apparaîtront ici.',
+                  astronautType: AstronautType.learning,
+                ),
+              )
+            else
+              ...sessions.map((s) {
+                final total   = s['total_questions'] as int? ?? 0;
+                final score   = s['score'] as int? ?? 0;
+                final pct     = total > 0 ? (score * 100 ~/ total) : 0;
+                final title   = (s['courses'] as Map?)?['title'] as String? ?? 'QSM';
+                final dt      = s['completed_at'] != null ? DateTime.tryParse(s['completed_at']) : null;
+                final dateStr = dt != null
+                    ? '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}'
+                    : '';
+                final color   = _scoreColor(pct);
+
+                final profMap = (s['classrooms'] as Map?)?['profiles'] as Map?;
+                final teacherName = profMap != null ? '${profMap['first_name'] ?? ''} ${profMap['last_name'] ?? ''}'.trim() : '';
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: color.withOpacity(0.25)),
+                    boxShadow: [
+                      BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 3))
+                    ],
+                  ),
+                  child: Row(children: [
+                    Container(
+                      width: 44, height: 44,
+                      decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
+                      child: Icon(LucideIcons.fileText, size: 20, color: color),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                          Text(title,
+                              style: GoogleFonts.inter(
+                                  fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text),
+                              overflow: TextOverflow.ellipsis),
+                          if (teacherName.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text('Avec $teacherName', style: GoogleFonts.inter(fontSize: 11, color: AppColors.primary)),
+                          ],
+                          const SizedBox(height: 3),
+                          Row(children: [
+                            const Icon(LucideIcons.calendar, size: 11, color: AppColors.textSub),
+                            const SizedBox(width: 4),
+                            Text(dateStr, style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSub)),
+                            const SizedBox(width: 10),
+                            const Icon(LucideIcons.helpCircle, size: 11, color: AppColors.textSub),
+                            const SizedBox(width: 4),
+                            Text('$total questions', style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSub)),
+                          ]),
+                        ])),
+                    Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text('$pct%',
+                              style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: color)),
+                          Text(_scoreLabel(pct),
+                              style: GoogleFonts.inter(fontSize: 10, color: color, fontWeight: FontWeight.w600)),
+                        ]),
+                  ]),
+                );
+              }),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ParentRoleChip extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white.withOpacity(0.3), width: 0.5),
+      ),
+      child: Text(
+        'Parent',
+        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white),
+      ),
+    );
+  }
+}
+
+class _KpiCard extends StatelessWidget {
+  final IconData icon;
+  final String label, value, sub;
+  final Color color;
+  const _KpiCard({
+    required this.icon, required this.label, required this.value, required this.color, required this.sub,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.2)),
+        boxShadow: [
+          BoxShadow(color: color.withOpacity(0.08), blurRadius: 12, offset: const Offset(0, 4))
+        ],
+      ),
+      child: Row(children: [
+        Container(
+          width: 44, height: 44,
+          decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
+          child: Icon(icon, color: color, size: 22),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+              Text(value, style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w900, color: color)),
+              Text(label, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.text)),
+              Text(sub, style: GoogleFonts.inter(fontSize: 10, color: AppColors.textSub)),
+            ])),
+      ]),
+    );
+  }
+}
+
+// ── CORRECTION PRINCIPALE : _ContactTab devient const ──────────────
+class _ContactTab extends StatefulWidget {
+  const _ContactTab();  // <-- ajout du const constructor
+  @override
+  State<_ContactTab> createState() => _ContactTabState();
+}
+
+class _ContactTabState extends State<_ContactTab> {
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  bool _showAllTeachers = false;
+  List<Map<String, dynamic>> _allTeachers = [];
+  bool _loadingAll = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController.addListener(() {
+      setState(() => _searchQuery = _searchController.text.toLowerCase());
+    });
+  }
+
+  Future<void> _loadAllTeachers() async {
+    if (_allTeachers.isNotEmpty) return;
+    setState(() => _loadingAll = true);
+    final teachers = await context.read<AppState>().authService.fetchAllUsers(roleFilter: 'teacher');
+    if (mounted) {
+      setState(() {
+        _allTeachers = teachers;
+        _loadingAll = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appState = context.watch<AppState>();
+    final childTeachers = appState.childTeachers;
+    final childDataLoaded = appState.childDataLoaded;
+
+    final List<Map<String, dynamic>> displayedTeachers = _showAllTeachers
+        ? _allTeachers
+        : childTeachers.map((t) => {
+            'id': t['teacher_id'],
+            'first_name': t['teacher_name']?.split(' ').first ?? 'Enseignant',
+            'last_name': t['teacher_name']?.split(' ').skip(1).join(' ') ?? '',
+            'category': t['category'] ?? '',
+          }).toList();
+
+    final filteredTeachers = displayedTeachers.where((t) {
+      final name = '${t['first_name'] ?? ''} ${t['last_name'] ?? ''}'.toLowerCase();
+      final category = (t['category'] ?? '').toString().toLowerCase();
+      return name.contains(_searchQuery) || category.contains(_searchQuery);
+    }).toList();
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Search Bar
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
+          ),
+          child: TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: 'Rechercher un enseignant ou une matière...',
+              hintStyle: GoogleFonts.inter(color: AppColors.textSub, fontSize: 14),
+              prefixIcon: const Icon(LucideIcons.search, size: 20, color: AppColors.primary),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Filters
+        Row(
+          children: [
+            _FilterChip(
+              label: "Profs de l'enfant",
+              isSelected: !_showAllTeachers,
+              onTap: () => setState(() => _showAllTeachers = false),
+            ),
+            const SizedBox(width: 8),
+            _FilterChip(
+              label: "Tous les enseignants",
+              isSelected: _showAllTeachers,
+              onTap: () {
+                setState(() => _showAllTeachers = true);
+                _loadAllTeachers();
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+
+        _SectionLabel(_showAllTeachers ? 'Annuaire des enseignants' : 'Enseignants de l\'enfant'),
+        const SizedBox(height: 12),
+
+        if (_showAllTeachers && _loadingAll)
+          const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator()))
+        else if (!_showAllTeachers && !childDataLoaded)
+          const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator()))
+        else if (filteredTeachers.isEmpty)
+          const EmptyStateCard(
+            emptyState: EmptyStateTeachers(),
+          )
+        else
+          ...filteredTeachers.map((t) {
+            final name = '${t['first_name'] ?? ''} ${t['last_name'] ?? ''}'.trim();
+            final category = t['category'] ?? 'Enseignant';
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.border.withOpacity(0.5)),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4, offset: const Offset(0, 2))],
+              ),
+              child: Row(children: [
+                Container(
+                  width: 48, height: 48,
+                  decoration: BoxDecoration(color: AppColors.primaryLight, borderRadius: BorderRadius.circular(14)),
+                  child: const Icon(LucideIcons.graduationCap, size: 24, color: AppColors.primary),
+                ),
+                const SizedBox(width: 14),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(name.isEmpty ? 'Enseignant' : name,
+                      style: GoogleFonts.nunito(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)),
+                  Text(category,
+                      style: GoogleFonts.nunito(fontSize: 12, color: AppColors.textSub, fontWeight: FontWeight.w600)),
+                ])),
+                // ── CORRECTION : MessagesScreen() sans const ──────────
+                GestureDetector(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => MessagesScreen()), // Retiré const
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(color: AppColors.primaryLight, borderRadius: BorderRadius.circular(12)),
+                    child: const Icon(LucideIcons.messageSquare, size: 20, color: AppColors.primary),
+                  ),
+                ),
+              ]),
+            );
+          }),
+      ]),
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _FilterChip({required this.label, required this.isSelected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: isSelected ? AppColors.primary : AppColors.border),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+            color: isSelected ? Colors.white : AppColors.textSub,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LinkChildTab extends StatefulWidget {
+  const _LinkChildTab();
+  @override
+  State<_LinkChildTab> createState() => _LinkChildTabState();
+}
+
+class _LinkChildTabState extends State<_LinkChildTab> {
+  String? _selectedFiliereId;
+  String? _selectedNiveauId;
+  String _alphabetFilter = '';
+  List<Map<String, dynamic>> _students = [];
+  List<Map<String, dynamic>> _filteredStudents = [];
+  List<Map<String, dynamic>> _filieres = [];
+  List<Map<String, dynamic>> _niveaux = [];
+  bool _isLoading = true;
+  bool _isLinking = false;
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadData();
+    });
+    _searchController.addListener(_applyFilters);
+  }
+
+  @override
+  void dispose() {
+    _searchController.removeListener(_applyFilters);
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+    try {
+      final appState = context.read<AppState>();
+      await appState.loadFilieres();
+      await appState.loadNiveaux();
+      final students = await appState.authService.fetchAllStudents();
+      setState(() {
+        _filieres = appState.filieres;
+        _niveaux = appState.niveaux;
+        _students = students;
+        _filteredStudents = students;
+      });
+    } catch (e) {
+      print('🔴 Error loading data: $e');
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  void _applyFilters() {
+    final searchQuery = _searchController.text.toLowerCase();
+    setState(() {
+      _filteredStudents = _students.where((s) {
+        final filiereMatch = _selectedFiliereId == null ||
+            s['filiere_id']?.toString() == _selectedFiliereId;
+        final niveauMatch = _selectedNiveauId == null ||
+            s['niveau_id']?.toString() == _selectedNiveauId;
+
+        final firstName = (s['first_name'] ?? '').toString().toLowerCase();
+        final lastName = (s['last_name'] ?? '').toString().toLowerCase();
+        final email = (s['email'] ?? '').toString().toLowerCase();
+        final codeMassar = (s['code_massar'] ?? '').toString().toLowerCase();
+
+        final nameMatch = searchQuery.isEmpty ||
+            firstName.contains(searchQuery) ||
+            lastName.contains(searchQuery) ||
+            email.contains(searchQuery) ||
+            codeMassar.contains(searchQuery);
+
+        final alphabetMatch = _alphabetFilter.isEmpty ||
+            firstName.startsWith(_alphabetFilter.toLowerCase()) ||
+            lastName.startsWith(_alphabetFilter.toLowerCase());
+
+        return filiereMatch && niveauMatch && nameMatch && alphabetMatch;
+      }).toList();
+    });
+  }
+
+  Future<void> _onFiliereChanged(String? value) async {
+    setState(() => _selectedFiliereId = value);
+    if (value != null) {
+      final niveaux = await context.read<AppState>().authService.fetchNiveauxByFiliere(value);
+      setState(() => _niveaux = niveaux);
+    }
+    _applyFilters();
+  }
+
+  Future<void> _linkChild(String childId) async {
+    final parentId = context.read<AppState>().currentUser?.id;
+    if (parentId == null) return;
+
+    setState(() => _isLinking = true);
+    try {
+      await context.read<AppState>().linkParentEnfant(parentId, childId);
+      if (mounted) {
+        setState(() {
+          for (var s in _students) {
+            if (s['id'].toString() == childId) {
+              final ids = s['linked_parent_ids'] != null ? List.from(s['linked_parent_ids']) : [];
+              if (!ids.contains(parentId)) ids.add(parentId);
+              s['linked_parent_ids'] = ids;
+            }
+          }
+          _applyFilters();
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Enfant lié avec succès!'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        await context.read<AppState>().loadChildData();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur: $e'), backgroundColor: AppColors.error),
+        );
+      }
+    } finally {
+      setState(() => _isLinking = false);
+    }
+  }
+
+  Future<void> _unlinkChild(String childId) async {
+    final parentId = context.read<AppState>().currentUser?.id;
+    if (parentId == null) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Délier l\'étudiant', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+        content: const Text('Voulez-vous vraiment délier cet étudiant de votre compte ?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+            child: const Text('Délier', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _isLinking = true);
+    try {
+      await context.read<AppState>().authService.unlinkParentEnfant(parentId, childId);
+      if (mounted) {
+        setState(() {
+          for (var s in _students) {
+            if (s['id'].toString() == childId) {
+              final ids = s['linked_parent_ids'] != null ? List.from(s['linked_parent_ids']) : [];
+              ids.remove(parentId);
+              s['linked_parent_ids'] = ids;
+            }
+          }
+          _applyFilters();
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Étudiant délié avec succès!'),
+            backgroundColor: AppColors.warning,
+          ),
+        );
+        await context.read<AppState>().loadChildData();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur: $e'), backgroundColor: AppColors.error),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLinking = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+            ),
+            child: Row(
+              children: [
+                const Icon(LucideIcons.info, color: AppColors.primary, size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Sélectionnez un étudiant à lier à votre compte parent.',
+                    style: GoogleFonts.inter(fontSize: 13, color: AppColors.text),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Search Bar
+          Text('Recherche',
+              style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _searchController,
+            onChanged: (_) => _applyFilters(),
+            decoration: InputDecoration(
+              hintText: 'Rechercher par nom, email ou code Massar...',
+              hintStyle: GoogleFonts.inter(fontSize: 13, color: AppColors.textSub),
+              prefixIcon: const Icon(LucideIcons.search, size: 18, color: AppColors.primary),
+              suffixIcon: _searchController.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(LucideIcons.x, size: 16),
+                      onPressed: () {
+                        _searchController.clear();
+                        _applyFilters();
+                      },
+                    )
+                  : null,
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.border, width: 0.5),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.border, width: 0.5),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.primary, width: 1),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Filters
+          Text('Filtres',
+              style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)),
+          const SizedBox(height: 12),
+
+          // Filière Dropdown
+          DropdownButtonFormField<String>(
+            initialValue: _selectedFiliereId,
+            decoration: InputDecoration(
+              labelText: 'Filière',
+              labelStyle: GoogleFonts.nunito(fontSize: 12, color: AppColors.textSub),
+              prefixIcon: const Icon(LucideIcons.graduationCap, color: AppColors.primary, size: 20),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            ),
+            items: [
+              const DropdownMenuItem(value: null, child: Text('Toutes les filières')),
+              ..._filieres.map((f) => DropdownMenuItem(
+                    value: f['id'].toString(),
+                    child: Text(f['nom']?.toString() ?? 'Sans nom', style: GoogleFonts.nunito(fontSize: 14)),
+                  )),
+            ],
+            onChanged: _onFiliereChanged,
+          ),
+          const SizedBox(height: 12),
+
+          // Niveau Dropdown
+          DropdownButtonFormField<String>(
+            initialValue: _selectedNiveauId,
+            decoration: InputDecoration(
+              labelText: 'Niveau',
+              labelStyle: GoogleFonts.nunito(fontSize: 12, color: AppColors.textSub),
+              prefixIcon: const Icon(LucideIcons.barChart2, color: AppColors.primary, size: 20),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            ),
+            items: [
+              const DropdownMenuItem(value: null, child: Text('Tous les niveaux')),
+              ..._niveaux.map((n) => DropdownMenuItem(
+                    value: n['id'].toString(),
+                    child: Text(n['nom']?.toString() ?? 'Sans nom', style: GoogleFonts.nunito(fontSize: 14)),
+                  )),
+            ],
+            onChanged: (value) {
+              setState(() => _selectedNiveauId = value);
+              _applyFilters();
+            },
+          ),
+          const SizedBox(height: 20),
+          Text('Filtrer par lettre',
+              style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSub)),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 40,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: 27,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final letters = ['', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')];
+                final letter = letters[index];
+                final isSelected = _alphabetFilter == letter;
+                return GestureDetector(
+                  onTap: () {
+                    setState(() => _alphabetFilter = letter);
+                    _applyFilters();
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: letter.isEmpty ? 60 : 40,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: isSelected ? AppColors.primary : Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: isSelected ? AppColors.primary : AppColors.border,
+                        width: 1,
+                      ),
+                      boxShadow: isSelected
+                          ? [BoxShadow(color: AppColors.primary.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))]
+                          : [],
+                    ),
+                    child: Text(
+                      letter.isEmpty ? 'Tous' : letter,
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                        color: isSelected ? Colors.white : AppColors.text,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Results count
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('${_filteredStudents.length} étudiants trouvés',
+                  style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text)),
+              if (_isLoading)
+                const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Student List
+          if (_isLoading)
+            const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
+          else if (_filteredStudents.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(32),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Column(
+                children: [
+                  const Icon(LucideIcons.searchX, size: 48, color: AppColors.textSub),
+                  const SizedBox(height: 16),
+                  Text('Aucun étudiant trouvé',
+                      style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text)),
+                  const SizedBox(height: 4),
+                  Text('Essayez d\'autres filtres',
+                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSub)),
+                ],
+              ),
+            )
+          else
+            ..._filteredStudents.map((student) {
+              final name = '${student['first_name'] ?? ''} ${student['last_name'] ?? ''}'.trim();
+              final email = student['email']?.toString() ?? '';
+              final codeMassar = student['code_massar']?.toString() ?? '';
+              final isLinked = student['linked_parent_ids'] != null &&
+                  (student['linked_parent_ids'] as List).contains(context.read<AppState>().currentUser?.id);
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: isLinked ? AppColors.success : AppColors.border),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 2))],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 50, height: 50,
+                      decoration: BoxDecoration(
+                        color: isLinked ? AppColors.success.withOpacity(0.1) : AppColors.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        isLinked ? LucideIcons.userCheck : LucideIcons.user,
+                        color: isLinked ? AppColors.success : AppColors.primary,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(name,
+                              style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)),
+                          const SizedBox(height: 4),
+                          Text('Code Massar: $codeMassar',
+                              style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSub)),
+                          Text(email,
+                              style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSub.withOpacity(0.7))),
+                        ],
+                      ),
+                    ),
+                    if (isLinked)
+                      Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: AppColors.success.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text('Lié',
+                                style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.success)),
+                          ),
+                          const SizedBox(height: 8),
+                          TextButton.icon(
+                            onPressed: _isLinking ? null : () => _unlinkChild(student['id'].toString()),
+                            icon: const Icon(LucideIcons.link2Off, size: 14, color: AppColors.error),
+                            label: Text('Délier',
+                                style: GoogleFonts.inter(fontSize: 11, color: AppColors.error, fontWeight: FontWeight.w600)),
+                            style: TextButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                          ),
+                        ],
+                      )
+                    else
+                      ElevatedButton.icon(
+                        onPressed: _isLinking
+                            ? null
+                            : () async {
+                                final confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: Text('Lier l\'étudiant',
+                                        style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+                                    content: Text('Voulez-vous lier $name à votre compte parent ?'),
+                                    actions: [
+                                      TextButton(
+                                          onPressed: () => Navigator.pop(context, false),
+                                          child: const Text('Annuler')),
+                                      ElevatedButton(
+                                        onPressed: () => Navigator.pop(context, true),
+                                        style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+                                        child: const Text('Lier', style: TextStyle(color: Colors.white)),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (confirm == true) {
+                                  _linkChild(student['id'].toString());
+                                }
+                              },
+                        icon: _isLinking
+                            ? const SizedBox(
+                                width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Icon(LucideIcons.link, size: 16),
+                        label: Text('Lier', style: GoogleFonts.inter(fontSize: 13)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  final String t;
+  const _SectionLabel(this.t);
+  @override
+  Widget build(BuildContext context) =>
+      Text(t, style: GoogleFonts.nunito(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text));
+}
+
+// ── Parent Library Tab ────────────────────────────────────────
+class _ParentLibraryTab extends StatefulWidget {
+  const _ParentLibraryTab();
+  @override
+  State<_ParentLibraryTab> createState() => _ParentLibraryTabState();
+}
+
+class _ParentLibraryTabState extends State<_ParentLibraryTab> {
+  int _selectedFiliere = 0;
+  int _selectedNiveau = 0;
+  int _selectedSubject = 0;
+  final Set<int> _expandedSemesters = {0};
+
+  final List<Color> _fallbackColors = [
+    AppColors.primary, AppColors.info, AppColors.success,
+    AppColors.warning, AppColors.error, Colors.purple,
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final s = context.read<AppState>();
+      if (!s.adminCoursesLoaded) s.loadAdminCourses();
+      if (!s.filieresLoaded) s.loadFilieres();
+      if (!s.niveauxLoaded) s.loadNiveaux();
+      if (!s.matieresLoaded) s.loadMatieres();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    final filieres = state.filieres;
+    final niveaux = state.niveaux;
+    final allMatieres = state.matieres;
+
+    if (!state.adminCoursesLoaded || !state.filieresLoaded || !state.niveauxLoaded || !state.matieresLoaded) {
+      return const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator()));
+    }
+
+    if (filieres.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(40),
+          child: Text('Aucune filière disponible', style: GoogleFonts.inter(color: AppColors.textSub)),
+        ),
+      );
+    }
+
+    if (_selectedFiliere >= filieres.length) _selectedFiliere = 0;
+    final selectedFiliereId = filieres[_selectedFiliere]['id']?.toString();
+    final niveauxForFiliere = niveaux.where((n) => n['filiere_id']?.toString() == selectedFiliereId).toList();
+    if (_selectedNiveau >= niveauxForFiliere.length) _selectedNiveau = 0;
+    final selectedNiveauId = niveauxForFiliere.isNotEmpty ? niveauxForFiliere[_selectedNiveau]['id']?.toString() : null;
+    final matieres = allMatieres.where((m) => m['niveau_id']?.toString() == selectedNiveauId).toList();
+    if (_selectedSubject >= matieres.length) _selectedSubject = 0;
+
+    final selectedNiveauName = niveauxForFiliere.isNotEmpty ? (niveauxForFiliere[_selectedNiveau]['nom'] as String? ?? '') : '';
+    final selectedFiliereName = (filieres[_selectedFiliere]['nom'] as String? ?? '');
+    final selectedSubjectName = matieres.isNotEmpty ? (matieres[_selectedSubject]['nom'] as String? ?? '') : '';
+
+    // Filter courses
+    final seenTitles = <String>{};
+    final allFilteredCourses = state.adminCourses.where((c) {
+      final title = c['title'] as String? ?? '';
+      final courseSubject = (c['subject'] as String? ?? '').trim();
+      final courseFiliere = (c['filiere'] as String? ?? '').trim();
+      final niveauMatch = courseFiliere.isEmpty
+          ? true
+          : (courseFiliere.toLowerCase() == selectedNiveauName.toLowerCase() ||
+              courseFiliere.toLowerCase() == selectedFiliereName.toLowerCase() ||
+              (selectedNiveauName.isNotEmpty && courseFiliere.toLowerCase().contains(selectedNiveauName.toLowerCase())));
+      final subjectMatch = selectedSubjectName.isEmpty ||
+          courseSubject.toLowerCase() == selectedSubjectName.toLowerCase();
+      if (niveauMatch && subjectMatch && !seenTitles.contains(title)) {
+        seenTitles.add(title);
+        return true;
+      }
+      return false;
+    }).toList();
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16).copyWith(bottom: 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Filière pills
+          SizedBox(
+            height: 40,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: filieres.length,
+              itemBuilder: (context, index) {
+                final isSelected = index == _selectedFiliere;
+                final nom = filieres[index]['nom'] as String? ?? 'Filière';
+                return Container(
+                  margin: const EdgeInsets.only(right: 8),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () => setState(() { _selectedFiliere = index; _selectedNiveau = 0; _selectedSubject = 0; }),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isSelected ? AppColors.primary : AppColors.background,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: isSelected ? AppColors.primary : AppColors.border),
+                      ),
+                      child: Text(nom, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: isSelected ? Colors.white : AppColors.textSub)),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Niveau pills
+          if (niveauxForFiliere.isNotEmpty) ...[
+            SizedBox(
+              height: 36,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: niveauxForFiliere.length,
+                itemBuilder: (context, index) {
+                  final isSelected = index == _selectedNiveau;
+                  final nom = niveauxForFiliere[index]['nom'] as String? ?? 'Niveau';
+                  return Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(18),
+                      onTap: () => setState(() { _selectedNiveau = index; _selectedSubject = 0; }),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: isSelected ? AppColors.primary.withOpacity(0.1) : Colors.transparent,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: isSelected ? AppColors.primary : AppColors.border),
+                        ),
+                        child: Text(nom, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: isSelected ? AppColors.primary : AppColors.textSub)),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
+
+          // Matière pills
+          if (matieres.isNotEmpty) ...[
+            SizedBox(
+              height: 40,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: matieres.length,
+                itemBuilder: (context, index) {
+                  final isSelected = index == _selectedSubject;
+                  final label = matieres[index]['nom'] as String? ?? 'Matière';
+                  final color = _fallbackColors[index % _fallbackColors.length];
+                  return Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: () => setState(() => _selectedSubject = index),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: isSelected ? color : AppColors.background,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: isSelected ? color : AppColors.border),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(LucideIcons.bookOpen, size: 14, color: isSelected ? Colors.white : color),
+                            const SizedBox(width: 6),
+                            Text(label, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: isSelected ? Colors.white : AppColors.textSub)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
+
+          // Semestres
+          if (allFilteredCourses.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(32),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.border)),
+              child: Column(
+                children: [
+                  Icon(LucideIcons.fileX, size: 48, color: AppColors.textSub.withOpacity(0.3)),
+                  const SizedBox(height: 16),
+                  Text('Aucune ressource trouvée', style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSub, fontWeight: FontWeight.w600), textAlign: TextAlign.center),
+                ],
+              ),
+            )
+          else
+            ...List.generate(2, (semIndex) {
+              final semNum = semIndex + 1;
+              final isExpanded = _expandedSemesters.contains(semIndex);
+              final semCourses = allFilteredCourses.where((c) {
+                final desc = (c['description'] as String? ?? '').toLowerCase();
+                if (semNum == 1) return desc.contains('semestre 1') || !desc.contains('semestre 2');
+                return desc.contains('semestre 2');
+              }).toList();
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.border)),
+                child: Column(
+                  children: [
+                    InkWell(
+                      onTap: () => setState(() => isExpanded ? _expandedSemesters.remove(semIndex) : _expandedSemesters.add(semIndex)),
+                      borderRadius: BorderRadius.circular(16),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            Text('Semestre $semNum', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text)),
+                            const Spacer(),
+                            Text('${semCourses.length} leçons', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSub)),
+                            const SizedBox(width: 8),
+                            AnimatedRotation(
+                              turns: isExpanded ? 0.5 : 0,
+                              duration: const Duration(milliseconds: 200),
+                              child: const Icon(LucideIcons.chevronDown, size: 18, color: AppColors.textSub),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (isExpanded && semCourses.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+                        child: GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            mainAxisSpacing: 12,
+                            crossAxisSpacing: 12,
+                            childAspectRatio: 1.1,
+                          ),
+                          itemCount: semCourses.length,
+                          itemBuilder: (context, i) {
+                            final course = semCourses[i];
+                            return GestureDetector(
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => CourseDetailScreen(course: course, canEdit: false),
+                                ),
+                              ),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF8F9FB),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: AppColors.border.withOpacity(0.5)),
+                                ),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Image.asset(
+                                      'assets/images/image.png',
+                                      width: 70,
+                                      height: 70,
+                                      errorBuilder: (_, __, ___) => const Icon(LucideIcons.folder, size: 50, color: AppColors.warning),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                                      child: Text(
+                                        course['title'] as String? ?? 'Sans titre',
+                                        textAlign: TextAlign.center,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.text),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+}

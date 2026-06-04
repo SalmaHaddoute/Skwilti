@@ -1,0 +1,53 @@
+name: skwilti_app
+description: Skwilti - Application IA de generation de QCM
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.2
+  google_fonts: ^8.1.0
+  lucide_icons: ^0.257.0
+  provider: ^6.1.1
+  shared_preferences: ^2.2.2
+  flutter_svg: ^2.0.10+1
+  cached_network_image: ^3.3.1
+  shimmer: ^3.0.0
+  percent_indicator: ^4.2.5
+
+  # File handling
+  file_picker: ^11.0.2
+  path_provider: ^2.1.2
+
+  # PDF & Printing
+  pdf: ^3.10.8
+  printing: ^5.12.0
+
+  # HTTP
+  dio: ^5.4.0
+  http: ^1.2.0
+
+  # Utils
+  intl: ^0.20.2
+
+  # Charts & Storage
+  fl_chart: ^1.2.0
+  hive_flutter: ^1.1.0
+
+  # Supabase
+  supabase_flutter: ^2.12.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icons/
+    - assets/images/

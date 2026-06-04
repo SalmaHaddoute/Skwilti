@@ -1,0 +1,43 @@
+═══════════════════════════════════════════════════════════
+  GUIDE SIMPLE - PLACER LES IMAGES DANS SKWILTI
+═══════════════════════════════════════════════════════════
+
+📍 OÙ PLACER LES IMAGES ?
+   
+   Dossier : assets/images/
+
+
+📝 QUELS NOMS DE FICHIERS ?
+
+   Image 3 (astronaute 3D)           → astronaut_3d.png
+   Image 2 (teacher + astronautes)   → teacher_astronauts.png  
+   Image 8 (astronaute laptop)       → astronaut_welcome.png
+   Image 7 (astronaute joyeux)       → astronaut_celebration.png
+   Image 9 (3 astronautes)           → astronaut_team.png
+   Image 4 (avatar parent)           → parent_avatar.png
+   Image 5 (avatar teacher)          → teacher_avatar.png
+   Image 6 (avatar student)          → student_avatar.png
+
+
+🎯 UTILISATION DANS L'APP
+
+   astronaut_3d.png          → ÉCRAN DE CONNEXION ⭐
+   teacher_astronauts.png    → DASHBOARD ENSEIGNANT
+   astronaut_welcome.png     → DASHBOARDS (étudiant, parent)
+   astronaut_celebration.png → MESSAGES DE SUCCÈS
+   astronaut_team.png        → GROUPES, ÉQUIPES
+   parent_avatar.png         → SÉLECTION DE RÔLE
+   teacher_avatar.png        → SÉLECTION DE RÔLE
+   student_avatar.png        → SÉLECTION DE RÔLE
+
+
+🚀 APRÈS AVOIR PLACÉ LES IMAGES
+
+   1. flutter clean
+   2. flutter pub get
+   3. flutter run
+
+
+✅ C'EST TOUT !
+
+═══════════════════════════════════════════════════════════
